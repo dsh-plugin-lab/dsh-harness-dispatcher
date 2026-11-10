@@ -1,8 +1,15 @@
 {
   "name": "dsh-harness-dispatcher",
   "version": "0.1.0",
-  "private": true,
   "description": "Score the agent harness, not the model: run fixed tasks against controlled harness variants and record deterministic traces.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dsh-plugin-lab/dsh-harness-dispatcher.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dsh-plugin-lab/dsh-harness-dispatcher/issues"
+  },
+  "homepage": "https://github.com/dsh-plugin-lab/dsh-harness-dispatcher#readme",
   "keywords": [
     "dsh",
     "deepseek-harness",
@@ -52,7 +59,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "pnpm run typecheck && pnpm run build && pnpm run test"
+    "check:release": "node scripts/check-release.mjs",
+    "check": "pnpm run typecheck && pnpm run build && pnpm run test && pnpm run check:release"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.1.0",
