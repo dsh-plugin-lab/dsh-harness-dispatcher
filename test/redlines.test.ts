@@ -276,6 +276,44 @@ describe('B7 — a missing measurement is recorded as missing, not as zero', () 
   })
 })
 
+describe('B9 — local `check` is the same command as CI', () => {
+  /**
+   * The rule: if `pnpm run check` is green, CI must be green. It was violated once — `check` ran
+   * typecheck / build / test, while CI also ran `lint` and `format:check`. Hand-edited source went in
+   * unformatted, the local suite stayed green, and the push went red. That is the most expensive kind
+   * of false green: it is only discovered after the work is already published.
+   */
+  const scripts = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+    scripts: Record<string, string>
+  }
+
+  it('runs every step the CI workflow runs', () => {
+    const check = scripts.scripts.check ?? ''
+    // These are exactly the `run:` steps of .github/workflows/ci.yml's verify job.
+    for (const step of ['typecheck', 'build', 'test', 'lint', 'format:check']) {
+      expect(check, `check must run "${step}" — CI does`).toContain(`pnpm run ${step}`)
+    }
+    expect(check).toContain('pnpm run check:release')
+  })
+
+  it('keeps the CI workflow in step (no step added there and forgotten here)', () => {
+    const ci = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')
+    const check = scripts.scripts.check ?? ''
+    const steps = [...ci.matchAll(/^\s+- run: pnpm run ([a-z:-]+)$/gm)].map((match) => match[1])
+    // A step present in CI but not in `check` is a step whose failure is discovered after pushing.
+    const missing = steps.filter(
+      (step) =>
+        step !== 'typecheck' &&
+        step !== 'build' &&
+        step !== 'test' &&
+        step !== 'lint' &&
+        step !== 'format:check' &&
+        !check.includes(`pnpm run ${step}`),
+    )
+    expect(missing, 'CI runs a step that `check` does not').toEqual([])
+  })
+})
+
 describe('B8 — the harness declares its own composition', () => {
   it('puts the persona row before every tool row', () => {
     // Load order is semantics: the persona must exist before the system prompt is assembled.

@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { HarnessSpecError, normalize } from '../src/harness.ts'
 
 const DEFAULTS = { tools: ['fs'], maxDepth: 1 }
-const FURNISHED: Record<string, string[]> = { fs: ['read', 'write', 'edit'], 'fs-search': ['grep', 'glob'], pwsh: ['pwsh'] }
+const FURNISHED: Record<string, string[]> = {
+  fs: ['read', 'write', 'edit'],
+  'fs-search': ['grep', 'glob'],
+  pwsh: ['pwsh'],
+}
 const CATALOG = {
   keys: new Set(Object.keys(FURNISHED)),
   furnished: (keys: readonly string[]) => new Set(keys.flatMap((key) => FURNISHED[key] ?? [])),
@@ -63,7 +67,12 @@ describe('harness normalize', () => {
       ],
     })
     expect(spec.faults).toEqual([
-      { tool: 'read', mode: 'deny', message: expect.stringContaining('not available'), latencyMs: 0 },
+      {
+        tool: 'read',
+        mode: 'deny',
+        message: expect.stringContaining('not available'),
+        latencyMs: 0,
+      },
       { tool: 'pwsh', mode: 'fail', message: 'boom', latencyMs: 0 },
       { tool: 'grep', mode: 'latency', message: '', latencyMs: 250 },
     ])

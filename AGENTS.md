@@ -56,15 +56,20 @@ Model + Harness = Agent        →       我们给「Harness」打分，不给�
 ## 验证
 
 ```
-pnpm run check     # typecheck + build + test + check:release
+pnpm run check     # typecheck + build + test + lint + format:check + check:release
 ```
 
-四项，缺一项就是假的绿：
+**六步，就是 CI 那六步**（外加发布态断言）。这不是讲究：`check` 曾经只跑前四项，
+于是手改过的源码没过 prettier，**本机全绿、推上去红了** —— 见
+[.agents/notes/2026-11-11-local-check-must-equal-ci.md](.agents/notes/2026-11-11-local-check-must-equal-ci.md)。
+**红线 B9 现在钉住这条等价性**：往 CI 加一步而忘了往 `check` 加，测试就红。
 
 - `pnpm run typecheck` —— `tsc -p tsconfig.json`，**0 error** 是硬要求。
 - `pnpm run build` —— tsdown，产物进 `lib/`（git 忽略，由 `files` 发布）。
-- `pnpm run test` —— 纯函数单测 + **红线 8 组 23 条**（[test/redlines.test.ts](test/redlines.test.ts)）。
+- `pnpm run test` —— 纯函数单测 + **红线 9 组 25 条**（[test/redlines.test.ts](test/redlines.test.ts)）。
   **不连宿主、不联网、不花额度**。
+- `pnpm run lint` / `pnpm run format:check` —— eslint / prettier。**手改过源码就一定要跑**：
+  用字符串替换改文件很容易带上不合格式的换行，而它不会在任何地方报错。
 - `pnpm run check:release` —— 发布态不变量（[scripts/check-release.mjs](scripts/check-release.mjs)）。
   **它拒绝 `private: true`**，所以本仓必须保持可发布形状。
 

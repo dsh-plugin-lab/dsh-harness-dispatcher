@@ -205,9 +205,7 @@ export function normalize(
   const offered = catalog.furnished(tools)
   const unfireable = faults.filter((fault) => !offered.has(fault.tool))
   if (unfireable.length > 0) {
-    const detail = unfireable
-      .map((fault) => `"${fault.tool}" (${fault.mode})`)
-      .join(', ')
+    const detail = unfireable.map((fault) => `"${fault.tool}" (${fault.mode})`).join(', ')
     throw new HarnessSpecError(
       `fault(s) target tool(s) this harness does not offer: ${detail}. ` +
         `Note that \`tools\` takes CATALOG KEYS while \`faults[].tool\` takes MODEL-FACING TOOL NAMES — ` +
