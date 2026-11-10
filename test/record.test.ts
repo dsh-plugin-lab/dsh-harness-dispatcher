@@ -27,6 +27,7 @@ function record(overrides: Partial<TrialRecord> = {}): TrialRecord {
     trial: 1,
     harness: {
       id: 'h',
+      fingerprint: 'ffffffff',
       tools: ['fs'],
       persona: null,
       faults: [],

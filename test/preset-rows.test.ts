@@ -6,6 +6,7 @@ import type { HarnessSpec } from '../src/harness.ts'
 function spec(overrides: Partial<HarnessSpec> = {}): HarnessSpec {
   return {
     id: 'test',
+    fingerprint: 'ffffffff',
     tools: ['fs'],
     persona: null,
     faults: [],

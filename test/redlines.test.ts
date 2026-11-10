@@ -39,7 +39,17 @@ function sources(): Map<string, string> {
 }
 
 const DEFAULTS = { tools: ['fs'], maxDepth: 1 }
-const KNOWN = new Set(['fs', 'fs-search', 'pwsh'])
+// A two-namespace table: catalog key → the model-facing tool names it furnishes. Kept small on
+// purpose — the redline is about the *rule*, and the real table is pinned separately by B1.
+const FURNISHED: Record<string, string[]> = {
+  fs: ['read', 'write', 'edit'],
+  'fs-search': ['grep', 'glob'],
+  pwsh: ['pwsh'],
+}
+const KNOWN = {
+  keys: new Set(Object.keys(FURNISHED)),
+  furnished: (keys: readonly string[]) => new Set(keys.flatMap((key) => FURNISHED[key] ?? [])),
+}
 
 describe('B1 — the catalog is the only tool vocabulary', () => {
   it('every default tool is a real catalog key', () => {
@@ -68,12 +78,12 @@ describe('B1 — the catalog is the only tool vocabulary', () => {
 describe('B2 — the three fault modes stay three distinct experiments', () => {
   it('accepts exactly deny, fail and latency', () => {
     for (const mode of ['deny', 'fail', 'latency'] as const) {
-      expect(normalize({ faults: [{ tool: 'fs', mode }] }, DEFAULTS, KNOWN).faults[0]?.mode).toBe(
+      expect(normalize({ faults: [{ tool: 'read', mode }] }, DEFAULTS, KNOWN).faults[0]?.mode).toBe(
         mode,
       )
     }
     expect(() =>
-      normalize({ faults: [{ tool: 'fs', mode: 'error' as 'fail' }] }, DEFAULTS, KNOWN),
+      normalize({ faults: [{ tool: 'read', mode: 'error' as 'fail' }] }, DEFAULTS, KNOWN),
     ).toThrow(/must be one of/)
   })
 
@@ -82,8 +92,8 @@ describe('B2 — the three fault modes stay three distinct experiments', () => {
       normalize(
         {
           faults: [
-            { tool: 'fs', mode: 'deny' },
-            { tool: 'fs', mode: 'fail' },
+            { tool: 'read', mode: 'deny' },
+            { tool: 'read', mode: 'fail' },
           ],
         },
         DEFAULTS,
@@ -271,6 +281,7 @@ describe('B8 — the harness declares its own composition', () => {
     // Load order is semantics: the persona must exist before the system prompt is assembled.
     const rows = harnessRows({
       id: 'x',
+      fingerprint: 'ffffffff',
       tools: ['fs', 'pwsh'],
       persona: 'be terse',
       faults: [],
@@ -285,6 +296,7 @@ describe('B8 — the harness declares its own composition', () => {
     for (const key of Object.keys(TOOL_CATALOG)) {
       const rows = harnessRows({
         id: 'x',
+        fingerprint: 'ffffffff',
         tools: [key],
         persona: null,
         faults: [],

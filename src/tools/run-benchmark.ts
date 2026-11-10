@@ -14,7 +14,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { AgentPresetRegistry } from '@deepseek-ai/dsh-agent-preset-registry'
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
-import { catalogLine, TOOL_KEYS } from '../catalog.ts'
+import { catalogLine, HARNESS_CATALOG } from '../catalog.ts'
 import { normalize } from '../harness.ts'
 import type { FaultMode, HarnessInput } from '../harness.ts'
 import type { FaultGate } from '../gate.ts'
@@ -221,7 +221,7 @@ export function registerRunBenchmark(ctx: Context, deps: RunBenchmarkDeps): void
         const spec = normalize(
           toHarnessInput(args.harness),
           { tools: deps.config.defaultTools, maxDepth: deps.config.defaultMaxDepth },
-          TOOL_KEYS,
+          HARNESS_CATALOG,
         )
 
         const trials = args.trials ?? 1

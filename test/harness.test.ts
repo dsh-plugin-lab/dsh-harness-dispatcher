@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { HarnessSpecError, normalize } from '../src/harness.ts'
 
 const DEFAULTS = { tools: ['fs'], maxDepth: 1 }
-const KNOWN = new Set(['fs', 'fs-search', 'pwsh'])
+const FURNISHED: Record<string, string[]> = { fs: ['read', 'write', 'edit'], 'fs-search': ['grep', 'glob'], pwsh: ['pwsh'] }
+const CATALOG = {
+  keys: new Set(Object.keys(FURNISHED)),
+  furnished: (keys: readonly string[]) => new Set(keys.flatMap((key) => FURNISHED[key] ?? [])),
+}
 
 /** The normalize call every test uses, with the shared defaults. */
 function norm(input: Parameters<typeof normalize>[0]) {
-  return normalize(input, DEFAULTS, KNOWN)
+  return normalize(input, DEFAULTS, CATALOG)
 }
 
 describe('harness normalize', () => {
@@ -51,27 +55,28 @@ describe('harness normalize', () => {
 
   it('defaults fault messages per mode and records latency only for latency', () => {
     const spec = norm({
+      tools: ['fs', 'pwsh', 'fs-search'],
       faults: [
-        { tool: 'fs', mode: 'deny' },
+        { tool: 'read', mode: 'deny' },
         { tool: 'pwsh', mode: 'fail', message: 'boom' },
-        { tool: 'fs-search', mode: 'latency', latencyMs: 250 },
+        { tool: 'grep', mode: 'latency', latencyMs: 250 },
       ],
     })
     expect(spec.faults).toEqual([
-      { tool: 'fs', mode: 'deny', message: expect.stringContaining('not available'), latencyMs: 0 },
+      { tool: 'read', mode: 'deny', message: expect.stringContaining('not available'), latencyMs: 0 },
       { tool: 'pwsh', mode: 'fail', message: 'boom', latencyMs: 0 },
-      { tool: 'fs-search', mode: 'latency', message: '', latencyMs: 250 },
+      { tool: 'grep', mode: 'latency', message: '', latencyMs: 250 },
     ])
   })
 
   it('rejects latency on non-latency modes and out-of-range latency', () => {
-    expect(() => norm({ faults: [{ tool: 'fs', mode: 'deny', latencyMs: 10 }] })).toThrow(
+    expect(() => norm({ faults: [{ tool: 'read', mode: 'deny', latencyMs: 10 }] })).toThrow(
       /belongs to mode/,
     )
-    expect(() => norm({ faults: [{ tool: 'fs', mode: 'latency', latencyMs: 0 }] })).toThrow(
+    expect(() => norm({ faults: [{ tool: 'read', mode: 'latency', latencyMs: 0 }] })).toThrow(
       /positive integer/,
     )
-    expect(() => norm({ faults: [{ tool: 'fs', mode: 'latency', latencyMs: 60_001 }] })).toThrow(
+    expect(() => norm({ faults: [{ tool: 'read', mode: 'latency', latencyMs: 60_001 }] })).toThrow(
       /at most 60000/,
     )
   })
@@ -80,13 +85,13 @@ describe('harness normalize', () => {
     expect(() =>
       norm({
         faults: [
-          { tool: 'fs', mode: 'deny' },
-          { tool: 'fs', mode: 'fail' },
+          { tool: 'read', mode: 'deny' },
+          { tool: 'read', mode: 'fail' },
         ],
       }),
     ).toThrow(/contradictory faults/)
     // Repeating the SAME mode is harmless.
-    expect(norm({ faults: [{ tool: 'fs', mode: 'deny' }] }).faults).toHaveLength(1)
+    expect(norm({ faults: [{ tool: 'read', mode: 'deny' }] }).faults).toHaveLength(1)
   })
 
   it('requires provider and model together', () => {
@@ -101,13 +106,13 @@ describe('harness normalize', () => {
   })
 
   it('derives a stable id that ignores declaration order but tracks the stimulus', () => {
-    const a = norm({ tools: ['fs', 'pwsh'], faults: [{ tool: 'fs', mode: 'deny' }] })
-    const b = norm({ tools: ['pwsh', 'fs'], faults: [{ tool: 'fs', mode: 'deny' }] })
+    const a = norm({ tools: ['fs', 'pwsh'], faults: [{ tool: 'read', mode: 'deny' }] })
+    const b = norm({ tools: ['pwsh', 'fs'], faults: [{ tool: 'read', mode: 'deny' }] })
     expect(a.id).toBe(b.id)
     // A different stimulus must produce a different id, or records would pool across variants.
     expect(norm({ tools: ['fs', 'pwsh'] }).id).not.toBe(a.id)
     expect(norm({ tools: ['fs', 'pwsh'], persona: 'terse' }).id).not.toBe(a.id)
-    expect(norm({ tools: ['fs', 'pwsh'], faults: [{ tool: 'fs', mode: 'fail' }] }).id).not.toBe(
+    expect(norm({ tools: ['fs', 'pwsh'], faults: [{ tool: 'read', mode: 'fail' }] }).id).not.toBe(
       a.id,
     )
   })

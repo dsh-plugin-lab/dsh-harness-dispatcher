@@ -52,8 +52,19 @@ export type PersonaVariant =
 
 /** The normalized Harness under test. */
 export interface HarnessSpec {
-  /** Short stable identity written into every record. Equal ids mean the same stimulus. */
+  /**
+   * Short identity written into every record. A **human label**: free-form, and a hand-written one can
+   * disagree with the fields it sits beside. Use {@link HarnessSpec.fingerprint} to compare records.
+   */
   readonly id: string
+  /**
+   * Machine identity: a short digest of every stimulus-constituting field, with `id` excluded.
+   *
+   * Two records with the same fingerprint describe the same stimulus; two with different fingerprints
+   * do not, **whatever their `id` says**. This is what makes "hold the task fixed, change only the
+   * harness" checkable after the fact instead of trustable before it.
+   */
+  readonly fingerprint: string
   /** Catalog keys of the tools this variant offers. */
   readonly tools: readonly string[]
   /** Resolved persona prose, or `null` when the variant mounts no persona row. */
@@ -126,18 +137,36 @@ export interface HarnessDefaults {
 }
 
 /**
+ * The catalog, as `normalize` needs it.
+ *
+ * Injected rather than imported so this module stays free of the host package ids: the spec layer is
+ * pure data validation, and a test can hand it a two-entry table.
+ */
+export interface HarnessCatalog {
+  /** Catalog keys that exist. */
+  readonly keys: ReadonlySet<string>
+  /**
+   * Model-facing tool names the given keys make callable.
+   * @param keys - catalog keys the harness mounts.
+   * @returns the furnished tool names.
+   */
+  readonly furnished: (keys: readonly string[]) => ReadonlySet<string>
+}
+
+/**
  * Normalize one caller-supplied Harness description into a runnable spec.
  *
  * @param input - the controlled descriptor.
  * @param defaults - deployment defaults for omitted fields.
- * @param knownTools - catalog keys that exist; an unknown key is a spec error, not a silent skip.
+ * @param catalog - the catalog: which keys exist, and which model-facing tool names each furnishes.
  * @returns the normalized spec.
- * @throws {HarnessSpecError} when the descriptor is internally inconsistent or names unknown tools.
+ * @throws {HarnessSpecError} when the descriptor is internally inconsistent, names unknown catalog
+ *   keys, or injects a fault into a tool the chosen composition does not offer.
  */
 export function normalize(
   input: HarnessInput,
   defaults: HarnessDefaults,
-  knownTools: ReadonlySet<string>,
+  catalog: HarnessCatalog,
 ): HarnessSpec {
   const persona = input.persona ?? 'none'
   if (persona === 'custom') {
@@ -160,15 +189,32 @@ export function normalize(
       'a harness must offer at least one tool; pass tools explicitly to ablate',
     )
   }
-  const unknownTools = tools.filter((tool) => !knownTools.has(tool))
+  const unknownTools = tools.filter((tool) => !catalog.keys.has(tool))
   if (unknownTools.length > 0) {
     throw new HarnessSpecError(
       `unknown tool(s) ${unknownTools.map((tool) => `"${tool}"`).join(', ')}; ` +
-        `known: ${[...knownTools].sort().join(', ')}`,
+        `known: ${[...catalog.keys].sort().join(', ')}`,
     )
   }
 
   const faults = (input.faults ?? []).map((fault, index) => normalizeFault(fault, index))
+
+  // A fault can only fire on a tool this composition actually offers. Without this check the fault is
+  // a silent no-op: the run looks like a clean baseline, while its recorded `harness.faults` claims a
+  // condition that was never applied. That is the exact failure this repository exists to avoid.
+  const offered = catalog.furnished(tools)
+  const unfireable = faults.filter((fault) => !offered.has(fault.tool))
+  if (unfireable.length > 0) {
+    const detail = unfireable
+      .map((fault) => `"${fault.tool}" (${fault.mode})`)
+      .join(', ')
+    throw new HarnessSpecError(
+      `fault(s) target tool(s) this harness does not offer: ${detail}. ` +
+        `Note that \`tools\` takes CATALOG KEYS while \`faults[].tool\` takes MODEL-FACING TOOL NAMES — ` +
+        `this harness offers: ${[...offered].sort().join(', ') || '(none)'}. ` +
+        `Add the catalog key that furnishes the tool, or fix the name.`,
+    )
+  }
 
   // One tool under two contradictory conditions is a spec error, not "last one wins": silently
   // choosing would make the record disagree with what the operator believes they configured.
@@ -203,11 +249,15 @@ export function normalize(
         ? (input.personaText?.trim() ?? '')
         : PERSONAS[persona]
 
-  const id = input.id ?? describe({ tools, persona, resolvedPersona, faults, provider, model })
+  const canonical = describe({ tools, persona, resolvedPersona, faults, provider, model })
+  const id = input.id ?? canonical
   if (id.trim() === '') throw new HarnessSpecError('harness id must not be empty')
 
   return {
     id,
+    // `id` is a human label and may be anything; `fingerprint` is derived from the fields alone, so it
+    // cannot disagree with what actually ran. Compare records by this, never by `id`.
+    fingerprint: digest(canonical),
     tools,
     persona: resolvedPersona,
     faults,
@@ -249,12 +299,31 @@ function normalizeFault(fault: FaultInput, index: number): Fault {
 }
 
 /**
- * Stable identity for a spec that did not name itself.
+ * A short, stable digest of one canonical description.
  *
- * Derived only from fields that change the stimulus, in a fixed order, so two descriptions of the
- * same Harness get the same id — which is what lets records be compared without a join.
+ * FNV-1a over UTF-8, rendered as 10 lowercase hex characters. Not cryptographic and not meant to be:
+ * it only has to make "same fields → same value, different fields → different value" true and cheap,
+ * so a record can be grouped without re-reading its `harness` object.
+ * @param text - the canonical description.
+ * @returns the digest.
+ */
+function digest(text: string): string {
+  let hash = 0x811c9dc5
+  for (const byte of new TextEncoder().encode(text)) {
+    hash ^= byte
+    // `Math.imul` keeps the multiply in 32-bit space; `*` would lose the low bits to float rounding.
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash.toString(16).padStart(8, '0')
+}
+
+/**
+ * Canonical description of the stimulus, used for both `fingerprint` and a derived `id`.
+ *
+ * Derived only from fields that change the stimulus, in a fixed order, so two descriptions of the same
+ * Harness produce the same string — that is what lets records be compared without a join.
  * @param parts - the stimulus-constituting fields.
- * @returns a short deterministic id.
+ * @returns a deterministic description.
  */
 function describe(parts: {
   tools: readonly string[]
