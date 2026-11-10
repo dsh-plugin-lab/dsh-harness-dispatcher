@@ -1,0 +1,4 @@
+# pnpm workspace root. Declared even with a single package — otherwise pnpm treats this as a
+# non-workspace directory and the dependency tree stops matching the one CI installs.
+packages:
+  - '.'

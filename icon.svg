@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Harness dispatcher">
+  <defs>
+    <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f7cff"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <!-- A test bench: one fixed rail (the task) with interchangeable rigs (the harnesses). -->
+  <rect x="6" y="12" width="52" height="6" rx="3" fill="url(#grad)"/>
+  <rect x="6" y="46" width="52" height="6" rx="3" fill="url(#grad)" opacity=".35"/>
+  <!-- Three harnesses hanging from the rail; the middle one is the subject. -->
+  <rect x="12" y="22" width="10" height="14" rx="2.5" fill="#4f7cff" opacity=".45"/>
+  <rect x="27" y="22" width="10" height="22" rx="2.5" fill="#4f7cff"/>
+  <rect x="42" y="22" width="10" height="14" rx="2.5" fill="#4f7cff" opacity=".45"/>
+  <!-- The recorded trace: a struck baseline under the subject. -->
+  <path d="M27 40 h10" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="32" cy="52" r="2.6" fill="#8b5cf6"/>
+</svg>

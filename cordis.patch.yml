@@ -1,0 +1,16 @@
+# Bundle patch: inserts this plugin as one row in a dsh profile.
+#
+# The top level is an array of Loader patch entries; `insert` appends plugin rows at the profile root.
+#
+# `name` must be a module id the Loader can resolve from the profile's node_modules — that is this
+# package's own name, so the row resolves to the directory this file lives in.
+#
+# `config.outputRoot` is left unset on purpose: the plugin computes a default under the user's home
+# directory. Set it explicitly if records should land somewhere reviewable, e.g.
+#   config:
+#     outputRoot: D:/benchmarks/runs
+#
+# **Never put credentials here.** This file is part of the repository.
+- insert:
+    - id: 'dsh-harness-dispatcher'
+      name: 'dsh-harness-dispatcher'

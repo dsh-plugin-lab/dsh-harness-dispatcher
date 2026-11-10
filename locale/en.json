@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Harness dispatcher",
+    "description": "Run a fixed task against controlled harness variants and record deterministic traces."
+  }
+}

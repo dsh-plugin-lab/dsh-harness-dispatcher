@@ -1,0 +1,8 @@
+# Line-ending contract: this repository is LF throughout. A Windows editor writing CRLF turns an
+# otherwise small diff into whole-file noise.
+* text=auto eol=lf
+
+# Binary artifacts get no line-ending conversion
+*.png binary
+*.jpg binary
+*.ico binary
