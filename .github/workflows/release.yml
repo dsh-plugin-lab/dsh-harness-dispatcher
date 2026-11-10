@@ -184,7 +184,7 @@ jobs:
       - name: Check whether that version is already on npm
         id: probe
         run: |
-          if npm view "dsh-dsml-rescue@${{ steps.version.outputs.version }}" version >/dev/null 2>&1; then
+          if npm view "dsh-harness-dispatcher@${{ steps.version.outputs.version }}" version >/dev/null 2>&1; then
             echo "published=true" >> "$GITHUB_OUTPUT"
             echo "::${{ steps.version.outputs.version }} is already on npm: skipping publish and completing only the git side"
           else
