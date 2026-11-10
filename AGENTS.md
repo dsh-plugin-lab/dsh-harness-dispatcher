@@ -94,11 +94,37 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 
 - **核它要 `GITHUB_TOKEN`**：`GITHUB_TOKEN=$(gh auth token) node scripts/check-criteria.mjs`
   （不带 token 会匿名超时，**超时不是通过**）。
-- **逐字件**：`.node-version`、`.gitattributes`、`pnpm-workspace.yaml`、`.github/workflows/ci.yml`、
-  `.github/workflows/release-drafter.yml`、`.github/dependabot.yml` 与模板**逐字相同**。
-  改它们之前先想清楚：**逐字件不一致会以「这个仓特殊」的形式留下来**。
-- **`release.yml` 只从兄弟仓取、不从模板生成**（模板里那几份是 token 渲染的或干脆不生成）。
-  取来之后**必须读一遍它断言了什么** —— 它包含发布顺序、OIDC、tag 形状这些不可撤销的动作。
+- **`release.yml` 不属于模板生成物**（取来之后**必须读一遍它断言了什么** ——
+  它包含发布顺序、OIDC、tag 形状这些不可撤销的动作）。
+  **2026-11-11 实测它带了别人的包名**：守卫写的是 `npm view "dsh-dsml-rescue@$VERSION"`，
+  于是永远查到「已存在」→ 永远跳过发布 → **报成功但什么都没发**。已修。照抄兄弟仓的代价就是这个。
+
+#### 怎么对齐（用组织仓自己的工具，不要凭记忆）
+
+```bash
+# 生成一份权威的 host-only 参考仓，然后逐字节比
+node <组织仓>/scripts/scaffold.mjs <临时目录> --host-only --name dsh-harness-dispatcher
+node <组织仓>/scripts/scaffold.mjs check <本仓路径>     # 期望 all byte-identical
+```
+
+`scaffold check` 只比**三个**身份件（`.node-version` / `release-drafter.yml` / `.prettierignore`）；
+**其余文件要自己比**。2026-11-11 那次靠人工逐项比，抓出四处偏差，其中两处会伤到人：
+
+| 文件 | 当时的偏差 | 后果 |
+|---|---|---|
+| `.gitignore` | **丢了 `*.local.yml`** | 凭据文件可能被提交 |
+| `scripts/check-release.mjs` | 是**兄弟仓的旧版** | 发布断言落后于模板 |
+
+#### 有意保留的偏离（**每条都要有理由，否则就是"这个仓特殊"**）
+
+| 偏离 | 理由 |
+|---|---|
+| `test/smoke.test.ts` 不含模板的 `apply({})` 断言 | 本仓 `apply` 读四个服务，空 ctx 必抛；保留它会逼出永不发生的防御分支 |
+| `check` 是六步（模板四步） | 修 CI 红根因，红线 B9 钉住 |
+| `files` 含 `README_zh.md` | 双语文档是实际惯例 |
+| devDependencies 比模板多六个 `@deepseek-ai/*` | 本仓真的 import 它们；模板那份起始集它自己说**未经校验** |
+| 没有 `docs/.gitkeep` / `.agents/notes/.gitkeep` | 两个目录都已非空，占位文件是噪音 |
+| `vitest.config.ts` 不含 `contract-live-*` 排除 | 本仓没有 contract 测试 |
 
 
 
