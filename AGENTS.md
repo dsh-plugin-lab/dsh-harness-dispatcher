@@ -55,9 +55,20 @@ pnpm run check     # typecheck + build + test
 
 - `pnpm run typecheck` —— `tsc -p tsconfig.json`，**0 error** 是硬要求。
 - `pnpm run test` —— 纯函数单测（fold / 归一化 / 特征提取）。**不连宿主、不联网、不花额度**。
+- **`pnpm run check` 不覆盖加载期**（`apply()` 里的每一行）—— 而加载期是「插件根本起不来」的唯一入口。
+  实测栽过：`'fs' in TOOL_KEYS`（`Set` 用 `in`，恒 false）让插件拒绝激活，而 check 全绿。
+  见 [.agents/notes/2026-11-10-first-real-machine-run.md](.agents/notes/2026-11-10-first-real-machine-run.md) §一。
 - 需要真宿主的那类验证（装进 profile、拉起子 agent）**不属于** `pnpm run check`，
   它是人工步骤，见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 的「真机验证」节。
   **不许把「装上了」当成「验过了」** —— 装上只证明模块能 import。
+
+### 当前验证状态（**这个会漂，别复述成永久保证**）
+
+- **主路径真机通过**（2026-11-10，宿主 `0.2.2-rc.1`）：装进 profile → 拉起子 agent →
+  注入 `fail` → 记录落地。干净基线 1 次工具调用 / 0 错误 / 3.4s；
+  注入后 3 次调用 / 2 错误 / 9.5s 且绕道 `pwsh`。**装配确实是变量。**
+- **边界只在单测里**：`deny` / `latency` 两模式、persona 其余三档、多 trial、并发、
+  `maxDepth > 1`、后台通道 —— **都没有真机跑过**。见那份 note 的 §四。
 
 ## 改动影响路由
 

@@ -64,8 +64,12 @@ export function apply(ctx: Context, config: Config): void {
 
   // Fail at load, not at run time: a default tool key that does not exist would otherwise surface as a
   // malformed subject composition after a child had already been started.
+  //
+  // `TOOL_KEYS.has()`, not the `in` operator: `in` tests property names on the Set object itself, so
+  // `'fs' in TOOL_KEYS` is always false and every key would be rejected. Caught by installing the
+  // plugin — the type checker and the unit tests cannot see the difference.
   for (const tool of config.defaultTools) {
-    if (!(tool in TOOL_KEYS)) {
+    if (!TOOL_KEYS.has(tool)) {
       throw new Error(`harness-dispatcher: defaultTools names an unknown catalog key "${tool}"`)
     }
   }
