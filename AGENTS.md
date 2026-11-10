@@ -25,6 +25,11 @@ Model + Harness = Agent        →       我们给「Harness」打分，不给�
 **设计取舍与依据在 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**，决策记录在 [.agents/notes/](.agents/notes/)。
 本文件只写「怎么干活」。
 
+> **⚠ 形状未定。** `harness` 现在实现成一个 6 字段枚举，但**这被判定为做窄了**。
+> 「它应该是一份插件行列表 + 指纹」这场讨论还在进行，未拍板项与各自卡点见
+> [.agents/notes/2026-11-11-harness-shape-open-discussion.md](.agents/notes/2026-11-11-harness-shape-open-discussion.md)。
+> **在它定案之前，不要按现在的枚举形状去加固或对外承诺 API。**
+
 ## 宿主版本线（**动手前先现查**）
 
 本机有两条线，**它们不是同一条**：源码检出（写代码时看的契约）与在跑的宿主（实际执行的那个）。
