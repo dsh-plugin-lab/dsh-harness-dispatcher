@@ -121,7 +121,7 @@ node <组织仓>/scripts/scaffold.mjs check <本仓路径>     # 期望 all byte
 |---|---|
 | `test/smoke.test.ts` 不含模板的 `apply({})` 断言 | 本仓 `apply` 读四个服务，空 ctx 必抛；保留它会逼出永不发生的防御分支 |
 | `check` 是六步（模板四步） | 修 CI 红根因，红线 B9 钉住 |
-| `files` 含 `README_zh.md` | 双语文档是实际惯例 |
+| `files` 含 [`README_zh.md`](README_zh.md) | 双语文档是实际惯例 |
 | devDependencies 比模板多六个 `@deepseek-ai/*` | 本仓真的 import 它们；模板那份起始集它自己说**未经校验** |
 | 没有 `docs/.gitkeep` / `.agents/notes/.gitkeep` | 两个目录都已非空，占位文件是噪音 |
 | `vitest.config.ts` 不含 `contract-live-*` 排除 | 本仓没有 contract 测试 |
