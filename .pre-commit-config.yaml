@@ -1,0 +1,42 @@
+# Local commit hook: second-scale checks only, autofixing what it can and blocking only what it cannot.
+#
+# This runs `pnpm exec` rather than `npx`: it walks the same tree CI installs
+# (pnpm install --frozen-lockfile --config.node-linker=hoisted) and **downloads nothing**.
+#
+# `--config.verify-deps-before-run=false` is mandatory: pnpm verifies the dependency tree before exec
+# by default, and pnpm's symlink linker hangs on this machine (the same thing the header of ci.yml
+# records). Measured: leaving it on makes every hook run trigger an implicit `pnpm install` that is
+# doomed to fail — the hook goes red and leaves a `_tmp_` file at the repository root. Turn it off and
+# the hook only borrows the prettier / eslint already in the tree.
+#
+# Trade-offs:
+#   - Formatting and lint only (second-scale). typecheck / tests / check:release belong to ci.yml.
+#   - Autofixes (--write / --fix) change files in the working tree, so **they need re-adding**.
+#
+# Enable once per clone (install pre-commit itself with `uv tool install pre-commit`):
+#   pre-commit install
+# Run over everything:
+#   pre-commit run --all-files
+# Skip once:
+#   git commit --no-verify
+#
+# Boundary: this file does not touch core.hooksPath (empty in this repository), and does not overwrite
+# an existing placeholder hook under .git/hooks; pre-commit only writes .git/hooks/pre-commit.
+repos:
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier --write (pnpm exec)
+        entry: pnpm --config.verify-deps-before-run=false exec prettier --write
+        language: system
+        files: \.(ts|tsx|js|jsx|mjs|cjs|json|css|scss|html|yml|yaml)$
+        exclude: ^(node_modules/|lib/|assets/|pnpm-lock\.yaml$)
+        require_serial: true
+
+      - id: eslint
+        name: eslint --fix (pnpm exec)
+        entry: pnpm --config.verify-deps-before-run=false exec eslint --fix
+        language: system
+        files: \.(ts|tsx|js|jsx|mjs|cjs)$
+        exclude: ^(node_modules/|lib/)
+        require_serial: true

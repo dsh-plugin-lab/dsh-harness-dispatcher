@@ -1,14 +1,15 @@
 # Dependencies
 node_modules/
 
-# Build output (produced by the build command; shipped through the `files` field).
-# WARNING: keep this anchored to the repository root. A bare `lib/` matches at **any depth**,
-# so it also ignores `src/lib/` — in this repository's layout that would be source code, and the
-# symptom is silent: green locally, missing files in CI's clean clone.
+# Build output (produced by the build command; shipped through the `files` field)
+# WARNING: this must stay anchored to the repository root. A bare `lib/` matches at **any depth**, so
+# it also ignores `src/lib/` — and in the structure this template lays down, `src/lib/` holds **source**
+# code. The symptom is silent: green locally, missing files in CI's clone. It was hit for real once
+# (see .agents/notes/2026-10-13-gitignore-lib-must-be-anchored.md).
 /lib/
 *.tsbuildinfo
 
-# Test and coverage artifacts
+# Tests and coverage
 coverage/
 .vitest/
 
@@ -26,6 +27,4 @@ Thumbs.db
 # Local credentials: never commit these
 .env
 .env.*
-
-# Benchmark output directories created by a manual run
-/runs/
+*.local.yml
