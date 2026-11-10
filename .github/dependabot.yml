@@ -1,0 +1,16 @@
+# Actions version drift comes to us: dependabot opens a bump PR every week and CI runs on it first.
+#
+# The github-actions ecosystem only. Most of this project's npm dependencies sit on the host's
+# pre-release line, so automatic PRs there would be pure noise; those get bumped by hand.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ['*']

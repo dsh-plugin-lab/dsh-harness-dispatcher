@@ -61,7 +61,7 @@ export function harnessRows(spec: HarnessSpec): PresetRow[] {
       // readable and stable.
       id: `bench-tool-${key}`,
       name: entry.name,
-      ...entry.config === undefined ? {} : { config: entry.config },
+      ...(entry.config === undefined ? {} : { config: entry.config }),
     })
   }
   return rows

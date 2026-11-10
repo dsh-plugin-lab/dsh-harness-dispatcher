@@ -217,7 +217,12 @@ export function foldEvent(state: TraceState, event: SessionEvent): void {
     case 'assistant/message': {
       const data = event.data as {
         message?: { content?: unknown }
-        usage?: { inputTokens?: unknown; outputTokens?: unknown; cacheReadTokens?: unknown; cacheWriteTokens?: unknown }
+        usage?: {
+          inputTokens?: unknown
+          outputTokens?: unknown
+          cacheReadTokens?: unknown
+          cacheWriteTokens?: unknown
+        }
         interrupted?: unknown
       }
       const text = assistantText(data.message?.content)

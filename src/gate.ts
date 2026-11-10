@@ -104,7 +104,11 @@ export class FaultGate {
     return this.armed.size
   }
 
-  private faultFor(sessionId: string | undefined, tool: string, mode: Fault['mode']): Fault | undefined {
+  private faultFor(
+    sessionId: string | undefined,
+    tool: string,
+    mode: Fault['mode'],
+  ): Fault | undefined {
     if (sessionId === undefined) return undefined
     const subject = this.armed.get(sessionId)
     if (subject === undefined) return undefined

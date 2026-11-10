@@ -17,15 +17,13 @@ function spec(overrides: Partial<HarnessSpec> = {}): HarnessSpec {
 
 describe('preset rows', () => {
   it('emits no persona row when the variant asks for none', () => {
-    expect(harnessRows(spec())).toEqual([
-      { id: 'bench-tool-fs', name: '@deepseek-ai/dsh-tool-fs' },
-    ])
+    expect(harnessRows(spec())).toEqual([{ id: 'bench-tool-fs', name: '@deepseek-ai/dsh-tool-fs' }])
   })
 
   it('puts the persona row first, before any tool row', () => {
     // Order is load order and therefore semantics: the persona must exist before prompt assembly.
     const rows = harnessRows(spec({ persona: 'be terse', tools: ['fs', 'pwsh'] }))
-    expect(rows.map(row => row.id)).toEqual(['bench-persona', 'bench-tool-fs', 'bench-tool-pwsh'])
+    expect(rows.map((row) => row.id)).toEqual(['bench-persona', 'bench-tool-fs', 'bench-tool-pwsh'])
     expect(rows[0]).toEqual({
       id: 'bench-persona',
       name: '@deepseek-ai/dsh-persona',
@@ -40,7 +38,7 @@ describe('preset rows', () => {
 
   it('keeps the declared tool order so two variants diff readably', () => {
     const rows = harnessRows(spec({ tools: ['pwsh', 'fs'] }))
-    expect(rows.map(row => row.id)).toEqual(['bench-tool-pwsh', 'bench-tool-fs'])
+    expect(rows.map((row) => row.id)).toEqual(['bench-tool-pwsh', 'bench-tool-fs'])
   })
 
   it('rejects a catalog key that does not exist', () => {

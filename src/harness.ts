@@ -89,12 +89,13 @@ export interface FaultInput {
 
 /** Shipped persona prose. Changing this text changes the stimulus — the spec id moves with it. */
 const PERSONAS: Readonly<Record<'terse' | 'verbose' | 'pair-programmer', string>> = {
-  terse: 'You are a terse engineer. Answer in as few words as possible, and never explain your plan.',
+  terse:
+    'You are a terse engineer. Answer in as few words as possible, and never explain your plan.',
   verbose:
     'You are a thorough engineer. Before every tool call, state what you intend to do and why, in prose.',
   'pair-programmer':
-    'You are pairing with a human. Narrate each step as you take it, and ask a clarifying question '
-    + 'whenever a requirement is ambiguous.',
+    'You are pairing with a human. Narrate each step as you take it, and ask a clarifying question ' +
+    'whenever a requirement is ambiguous.',
 }
 
 /** Default fault message per mode. Literal and stable: it is part of the stimulus. */
@@ -143,7 +144,9 @@ export function normalize(
     const text = input.personaText?.trim() ?? ''
     if (text === '') throw new HarnessSpecError('persona "custom" requires a non-empty personaText')
     if (text.length > MAX_PERSONA_TEXT) {
-      throw new HarnessSpecError(`personaText must be at most ${String(MAX_PERSONA_TEXT)} characters`)
+      throw new HarnessSpecError(
+        `personaText must be at most ${String(MAX_PERSONA_TEXT)} characters`,
+      )
     }
   } else if (input.personaText !== undefined) {
     throw new HarnessSpecError('personaText is only meaningful with persona "custom"')
@@ -153,13 +156,15 @@ export function normalize(
   if (tools.length === 0) {
     // An empty tool set is a legitimate ablation, but it must be asked for explicitly rather than
     // arriving as the result of a typo that emptied a default.
-    throw new HarnessSpecError('a harness must offer at least one tool; pass tools explicitly to ablate')
+    throw new HarnessSpecError(
+      'a harness must offer at least one tool; pass tools explicitly to ablate',
+    )
   }
-  const unknownTools = tools.filter(tool => !knownTools.has(tool))
+  const unknownTools = tools.filter((tool) => !knownTools.has(tool))
   if (unknownTools.length > 0) {
     throw new HarnessSpecError(
-      `unknown tool(s) ${unknownTools.map(tool => `"${tool}"`).join(', ')}; `
-      + `known: ${[...knownTools].sort().join(', ')}`,
+      `unknown tool(s) ${unknownTools.map((tool) => `"${tool}"`).join(', ')}; ` +
+        `known: ${[...knownTools].sort().join(', ')}`,
     )
   }
 
@@ -180,7 +185,9 @@ export function normalize(
 
   const maxDepth = input.maxDepth ?? defaults.maxDepth
   if (!Number.isSafeInteger(maxDepth) || maxDepth < 1) {
-    throw new HarnessSpecError('maxDepth must be an integer of at least 1: the subject must be startable')
+    throw new HarnessSpecError(
+      'maxDepth must be an integer of at least 1: the subject must be startable',
+    )
   }
 
   const provider = input.provider ?? null
@@ -189,11 +196,12 @@ export function normalize(
     throw new HarnessSpecError('provider and model must be supplied together or omitted together')
   }
 
-  const resolvedPersona = persona === 'none'
-    ? null
-    : persona === 'custom'
-      ? (input.personaText?.trim() ?? '')
-      : PERSONAS[persona]
+  const resolvedPersona =
+    persona === 'none'
+      ? null
+      : persona === 'custom'
+        ? (input.personaText?.trim() ?? '')
+        : PERSONAS[persona]
 
   const id = input.id ?? describe({ tools, persona, resolvedPersona, faults, provider, model })
   if (id.trim() === '') throw new HarnessSpecError('harness id must not be empty')
@@ -219,7 +227,12 @@ function normalizeFault(fault: FaultInput, index: number): Fault {
     throw new HarnessSpecError(`faults[${String(index)}]: latencyMs belongs to mode "latency"`)
   }
   if (fault.mode !== 'latency') {
-    return { tool: fault.tool, mode: fault.mode, message: fault.message ?? DEFAULT_MESSAGES[fault.mode], latencyMs: 0 }
+    return {
+      tool: fault.tool,
+      mode: fault.mode,
+      message: fault.message ?? DEFAULT_MESSAGES[fault.mode],
+      latencyMs: 0,
+    }
   }
   const latencyMs = fault.latencyMs ?? DEFAULT_LATENCY_MS
   if (!Number.isSafeInteger(latencyMs) || latencyMs <= 0 || latencyMs > MAX_LATENCY_MS) {
@@ -227,7 +240,12 @@ function normalizeFault(fault: FaultInput, index: number): Fault {
       `faults[${String(index)}]: latencyMs must be a positive integer of at most ${String(MAX_LATENCY_MS)}`,
     )
   }
-  return { tool: fault.tool, mode: 'latency', message: fault.message ?? DEFAULT_MESSAGES.latency, latencyMs }
+  return {
+    tool: fault.tool,
+    mode: 'latency',
+    message: fault.message ?? DEFAULT_MESSAGES.latency,
+    latencyMs,
+  }
 }
 
 /**
@@ -248,12 +266,20 @@ function describe(parts: {
 }): string {
   const segments = [`tools=${[...parts.tools].sort().join(',')}`]
   // A custom persona's identity is its text; a shipped variant's identity is its name.
-  segments.push(parts.persona === 'custom'
-    ? `persona=custom:${parts.resolvedPersona ?? ''}`
-    : `persona=${parts.persona}`)
+  segments.push(
+    parts.persona === 'custom'
+      ? `persona=custom:${parts.resolvedPersona ?? ''}`
+      : `persona=${parts.persona}`,
+  )
   if (parts.faults.length > 0) {
-    segments.push(`faults=${parts.faults.map(fault => `${fault.mode}:${fault.tool}`).sort().join('+')}`)
+    segments.push(
+      `faults=${parts.faults
+        .map((fault) => `${fault.mode}:${fault.tool}`)
+        .sort()
+        .join('+')}`,
+    )
   }
-  if (parts.provider !== null && parts.model !== null) segments.push(`route=${parts.provider}/${parts.model}`)
+  if (parts.provider !== null && parts.model !== null)
+    segments.push(`route=${parts.provider}/${parts.model}`)
   return segments.join('|')
 }

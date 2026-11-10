@@ -58,9 +58,10 @@ export const Config: z<Config> = z.object({
  * @param config - resolved plugin configuration.
  */
 export function apply(ctx: Context, config: Config): void {
-  const outputRoot = config.outputRoot.trim() === ''
-    ? join(homedir(), '.dsh', 'harness-dispatcher', 'runs')
-    : config.outputRoot
+  const outputRoot =
+    config.outputRoot.trim() === ''
+      ? join(homedir(), '.dsh', 'harness-dispatcher', 'runs')
+      : config.outputRoot
 
   // Fail at load, not at run time: a default tool key that does not exist would otherwise surface as a
   // malformed subject composition after a child had already been started.
@@ -98,9 +99,11 @@ export function apply(ctx: Context, config: Config): void {
     order: ctx.systemPrompt.getSectionOrder('TOOL_SUBAGENT'),
     text: (context) => {
       if (ctx.tools.get('run_benchmark', context.scope) === undefined) return ''
-      return 'To compare harnesses, hold the task fixed and call `run_benchmark` once per harness '
-        + 'variant with the same `task_id` and `prompt`. Never change the task between variants — the '
-        + 'only variable is the `harness` argument.'
+      return (
+        'To compare harnesses, hold the task fixed and call `run_benchmark` once per harness ' +
+        'variant with the same `task_id` and `prompt`. Never change the task between variants — the ' +
+        'only variable is the `harness` argument.'
+      )
     },
   })
 

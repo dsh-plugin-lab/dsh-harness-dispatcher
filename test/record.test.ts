@@ -15,7 +15,7 @@ async function root(): Promise<string> {
 }
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
+  await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
 const META = { runId: 'run-x', startedAt: 1_700_000_000_000, taskId: 'task-1', note: null }
@@ -63,8 +63,8 @@ describe('run records', () => {
 
     const lines = (await readFile(run.recordPath, 'utf8')).trim().split('\n')
     expect(lines).toHaveLength(2)
-    const parsed = lines.map(line => JSON.parse(line) as TrialRecord)
-    expect(parsed.map(entry => entry.trial)).toEqual([1, 2])
+    const parsed = lines.map((line) => JSON.parse(line) as TrialRecord)
+    expect(parsed.map((entry) => entry.trial)).toEqual([1, 2])
     expect(parsed[1]?.stopReason).toBe('error')
   })
 

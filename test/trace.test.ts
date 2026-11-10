@@ -11,9 +11,14 @@ function ev<T extends string>(type: T, data: unknown): SessionEvent {
   return { type, seq, time: seq, data } as unknown as SessionEvent
 }
 
-const call = (callId: string, name: string) => ev('tool/call', { turn: 1, step: 1, callId, name, arguments: '{}' })
+const call = (callId: string, name: string) =>
+  ev('tool/call', { turn: 1, step: 1, callId, name, arguments: '{}' })
 const okResult = (callId: string) =>
-  ev('tool/result', { turn: 1, step: 1, message: { role: 'tool', toolCallId: callId, content: [], isError: false } })
+  ev('tool/result', {
+    turn: 1,
+    step: 1,
+    message: { role: 'tool', toolCallId: callId, content: [], isError: false },
+  })
 const errResult = (callId: string, code = 'ENOENT') =>
   ev('tool/result', {
     turn: 1,
@@ -27,7 +32,7 @@ const say = (text: string, usage?: Record<string, number>) =>
     step: 1,
     message: { role: 'assistant', content: text === '' ? [] : [{ type: 'text', text }] },
     stream: [],
-    ...usage === undefined ? {} : { usage },
+    ...(usage === undefined ? {} : { usage }),
   })
 
 describe('trace fold', () => {
@@ -81,13 +86,17 @@ describe('trace fold', () => {
   })
 
   it('keeps the final assistant text and notes interruption', () => {
-    const features = summarize([say('first'), say('second'), ev('assistant/message', {
-      turn: 1,
-      step: 1,
-      message: { role: 'assistant', content: [{ type: 'text', text: 'cut' }] },
-      stream: [],
-      interrupted: true,
-    })])
+    const features = summarize([
+      say('first'),
+      say('second'),
+      ev('assistant/message', {
+        turn: 1,
+        step: 1,
+        message: { role: 'assistant', content: [{ type: 'text', text: 'cut' }] },
+        stream: [],
+        interrupted: true,
+      }),
+    ])
     expect(features.finalText).toBe('cut')
     expect(features.interrupted).toBe(true)
   })
@@ -122,7 +131,11 @@ describe('trace fold', () => {
   })
 
   it('agrees between the incremental fold and the batch fold', () => {
-    const events = [call('c1', 'read'), errResult('c1'), say('done', { inputTokens: 3, outputTokens: 4 })]
+    const events = [
+      call('c1', 'read'),
+      errResult('c1'),
+      say('done', { inputTokens: 3, outputTokens: 4 }),
+    ]
     const incremental: TraceState = emptyTrace()
     for (const event of events) foldEvent(incremental, event)
     expect(finishTrace(incremental)).toEqual(summarize(events))

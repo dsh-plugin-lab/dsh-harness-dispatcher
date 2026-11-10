@@ -1,0 +1,68 @@
+# Day-to-day CI: every push to main and every PR runs the type check, the build and the full test suite.
+#
+# A frozen install rather than a plain one: it installs strictly from the lockfile and **fails
+# outright** when the lockfile and package.json disagree — which is exactly what this is here to
+# catch. The criterion: CI installs are always frozen and never resolve new versions over the network.
+#
+# `--config.node-linker=hoisted` is not an optimisation, it is a correctness switch: pnpm's symlink
+# linker cannot resolve the browser half's peer web packages in this tree, and the failure surfaces
+# as a test that cannot see its own dependencies. The local hook borrows the same flag for the same
+# reason.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # pnpm has to be installed before setup-node, or `cache: pnpm` cannot find the store.
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          # .node-version is the single source for the baseline, so CI cannot drift from a laptop.
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile --config.node-linker=hoisted
+
+      - run: pnpm run typecheck
+
+      - run: pnpm run build
+
+      - run: pnpm run test
+
+      - run: pnpm run lint
+
+      - name: Format check
+        run: pnpm run format:check
+
+  # The closing job — the ruleset's required_status_checks names this one status ("CI Success"), so
+  # jobs inside this file can come and go without touching the ruleset. Three things cannot move:
+  #   1. Judge at step level only. At job level a false condition turns the job `skipped`, and GitHub
+  #      treats `skipped` as success — which is precisely the false green we are guarding against.
+  #   2. `needs` must list every job id in this file; miss one and that job can go red while this passes.
+  #   3. `skipped` goes red too. This workflow has no legitimate `if:` skip, so a `skipped` can only be
+  #      a cascade from an upstream failure (and that upstream is in `needs`, so it also goes red).
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [verify]
+    if: always()
+    steps:
+      - name: Verify all jobs succeeded
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: |
+          echo "::error::a job did not succeed — CI Success goes red (see the comment above this job)"
+          echo '${{ toJSON(needs) }}'
+          exit 1

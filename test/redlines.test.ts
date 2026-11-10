@@ -58,7 +58,9 @@ describe('B1 — the catalog is the only tool vocabulary', () => {
       // A hard-coded provider module id outside the catalog would let a row bypass validation.
       if (file === 'src/catalog.ts') continue
       const matches = text.match(/['"]@deepseek-ai\/dsh-tool-[a-z-]+['"]/g) ?? []
-      expect(matches, `${file} hard-codes a tool module id; add it to catalog.ts instead`).toEqual([])
+      expect(matches, `${file} hard-codes a tool module id; add it to catalog.ts instead`).toEqual(
+        [],
+      )
     }
   })
 })
@@ -66,7 +68,9 @@ describe('B1 — the catalog is the only tool vocabulary', () => {
 describe('B2 — the three fault modes stay three distinct experiments', () => {
   it('accepts exactly deny, fail and latency', () => {
     for (const mode of ['deny', 'fail', 'latency'] as const) {
-      expect(normalize({ faults: [{ tool: 'fs', mode }] }, DEFAULTS, KNOWN).faults[0]?.mode).toBe(mode)
+      expect(normalize({ faults: [{ tool: 'fs', mode }] }, DEFAULTS, KNOWN).faults[0]?.mode).toBe(
+        mode,
+      )
     }
     expect(() =>
       normalize({ faults: [{ tool: 'fs', mode: 'error' as 'fail' }] }, DEFAULTS, KNOWN),
@@ -75,7 +79,16 @@ describe('B2 — the three fault modes stay three distinct experiments', () => {
 
   it('refuses contradictory faults on one tool rather than letting the last win', () => {
     expect(() =>
-      normalize({ faults: [{ tool: 'fs', mode: 'deny' }, { tool: 'fs', mode: 'fail' }] }, DEFAULTS, KNOWN),
+      normalize(
+        {
+          faults: [
+            { tool: 'fs', mode: 'deny' },
+            { tool: 'fs', mode: 'fail' },
+          ],
+        },
+        DEFAULTS,
+        KNOWN,
+      ),
     ).toThrow(/contradictory/)
   })
 
@@ -94,11 +107,15 @@ describe('B3 — no statistics, ever, in this process', () => {
   it('source computes no mean, median or interval', () => {
     // The boundary is the whole point of the repository: records must stay recomputable under a
     // different analysis口径, which is impossible if the plugin already averaged something.
-    const banned = /\b(mean|average|median|percentile|stddev|variance|confidenceInterval|pValue|p_value)\b/i
+    const banned =
+      /\b(mean|average|median|percentile|stddev|variance|confidenceInterval|pValue|p_value)\b/i
     for (const [file, text] of sources()) {
       // Strip comments first: a comment explaining why we do not average is not a violation.
       const code = text.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/\/\/.*$/gm, '')
-      expect(banned.test(code), `${file} computes a statistic; that belongs outside this repository`).toBe(false)
+      expect(
+        banned.test(code),
+        `${file} computes a statistic; that belongs outside this repository`,
+      ).toBe(false)
     }
   })
 
@@ -127,14 +144,17 @@ describe('B4 — a record holds facts, and no secrets', () => {
   })
 })
 
-describe('B5 — the fault gate changes nobody else\'s behaviour', () => {
+describe("B5 — the fault gate changes nobody else's behaviour", () => {
   it('an idle gate returns the downstream decision untouched', () => {
     // Read from source: every listener must call `next()` when no subject is armed, so an unarmed
     // bench is a no-op rather than a policy change.
     const gate = sources().get('src/gate.ts')
     expect(gate).toBeDefined()
     const occurrences = gate?.match(/return next\(\)/g) ?? []
-    expect(occurrences.length, 'each of the three stages must delegate when unarmed').toBeGreaterThanOrEqual(3)
+    expect(
+      occurrences.length,
+      'each of the three stages must delegate when unarmed',
+    ).toBeGreaterThanOrEqual(3)
   })
 
   it('arms by Session id, so overlapping trials cannot disarm each other', () => {
@@ -186,11 +206,21 @@ describe('B7 — a missing measurement is recorded as missing, not as zero', () 
   it('counts unreported settlements alongside the totals', () => {
     const events = [
       {
-        type: 'assistant/message', seq: 1, time: 1,
-        data: { turn: 1, step: 1, message: { role: 'assistant', content: [] }, stream: [], usage: { inputTokens: 5, outputTokens: 6 } },
+        type: 'assistant/message',
+        seq: 1,
+        time: 1,
+        data: {
+          turn: 1,
+          step: 1,
+          message: { role: 'assistant', content: [] },
+          stream: [],
+          usage: { inputTokens: 5, outputTokens: 6 },
+        },
       },
       {
-        type: 'assistant/message', seq: 2, time: 2,
+        type: 'assistant/message',
+        seq: 2,
+        time: 2,
         data: { turn: 1, step: 1, message: { role: 'assistant', content: [] }, stream: [] },
       },
     ] as unknown as SessionEvent[]
@@ -206,10 +236,21 @@ describe('B7 — a missing measurement is recorded as missing, not as zero', () 
   it('attributes a tool error to the tool that issued the call', () => {
     // Attributing it to the result would blame nobody, since a result carries only a call id.
     const events = [
-      { type: 'tool/call', seq: 1, time: 1, data: { turn: 1, step: 1, callId: 'c1', name: 'read', arguments: '{}' } },
       {
-        type: 'tool/result', seq: 2, time: 2,
-        data: { turn: 1, step: 1, message: { role: 'tool', toolCallId: 'c1', content: [], isError: true } },
+        type: 'tool/call',
+        seq: 1,
+        time: 1,
+        data: { turn: 1, step: 1, callId: 'c1', name: 'read', arguments: '{}' },
+      },
+      {
+        type: 'tool/result',
+        seq: 2,
+        time: 2,
+        data: {
+          turn: 1,
+          step: 1,
+          message: { role: 'tool', toolCallId: 'c1', content: [], isError: true },
+        },
       },
     ] as unknown as SessionEvent[]
     expect(summarize(events).byTool.read).toEqual({ calls: 1, errors: 1 })
@@ -229,18 +270,26 @@ describe('B8 — the harness declares its own composition', () => {
   it('puts the persona row before every tool row', () => {
     // Load order is semantics: the persona must exist before the system prompt is assembled.
     const rows = harnessRows({
-      id: 'x', tools: ['fs', 'pwsh'], persona: 'be terse', faults: [],
-      route: { provider: null, model: null }, maxDepth: 1,
+      id: 'x',
+      tools: ['fs', 'pwsh'],
+      persona: 'be terse',
+      faults: [],
+      route: { provider: null, model: null },
+      maxDepth: 1,
     })
     expect(rows[0]?.id).toBe('bench-persona')
-    expect(rows.slice(1).every(row => row.id.startsWith('bench-tool-'))).toBe(true)
+    expect(rows.slice(1).every((row) => row.id.startsWith('bench-tool-'))).toBe(true)
   })
 
   it('never mounts a row the catalog does not name', () => {
     for (const key of Object.keys(TOOL_CATALOG)) {
       const rows = harnessRows({
-        id: 'x', tools: [key], persona: null, faults: [],
-        route: { provider: null, model: null }, maxDepth: 1,
+        id: 'x',
+        tools: [key],
+        persona: null,
+        faults: [],
+        route: { provider: null, model: null },
+        maxDepth: 1,
       })
       expect(rows[0]?.name).toBe(TOOL_CATALOG[key]?.name)
     }

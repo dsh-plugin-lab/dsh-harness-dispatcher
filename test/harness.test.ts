@@ -65,15 +65,26 @@ describe('harness normalize', () => {
   })
 
   it('rejects latency on non-latency modes and out-of-range latency', () => {
-    expect(() => norm({ faults: [{ tool: 'fs', mode: 'deny', latencyMs: 10 }] })).toThrow(/belongs to mode/)
-    expect(() => norm({ faults: [{ tool: 'fs', mode: 'latency', latencyMs: 0 }] })).toThrow(/positive integer/)
-    expect(() => norm({ faults: [{ tool: 'fs', mode: 'latency', latencyMs: 60_001 }] })).toThrow(/at most 60000/)
+    expect(() => norm({ faults: [{ tool: 'fs', mode: 'deny', latencyMs: 10 }] })).toThrow(
+      /belongs to mode/,
+    )
+    expect(() => norm({ faults: [{ tool: 'fs', mode: 'latency', latencyMs: 0 }] })).toThrow(
+      /positive integer/,
+    )
+    expect(() => norm({ faults: [{ tool: 'fs', mode: 'latency', latencyMs: 60_001 }] })).toThrow(
+      /at most 60000/,
+    )
   })
 
   it('rejects contradictory faults on one tool rather than letting the last win', () => {
-    expect(() => norm({
-      faults: [{ tool: 'fs', mode: 'deny' }, { tool: 'fs', mode: 'fail' }],
-    })).toThrow(/contradictory faults/)
+    expect(() =>
+      norm({
+        faults: [
+          { tool: 'fs', mode: 'deny' },
+          { tool: 'fs', mode: 'fail' },
+        ],
+      }),
+    ).toThrow(/contradictory faults/)
     // Repeating the SAME mode is harmless.
     expect(norm({ faults: [{ tool: 'fs', mode: 'deny' }] }).faults).toHaveLength(1)
   })
@@ -96,7 +107,9 @@ describe('harness normalize', () => {
     // A different stimulus must produce a different id, or records would pool across variants.
     expect(norm({ tools: ['fs', 'pwsh'] }).id).not.toBe(a.id)
     expect(norm({ tools: ['fs', 'pwsh'], persona: 'terse' }).id).not.toBe(a.id)
-    expect(norm({ tools: ['fs', 'pwsh'], faults: [{ tool: 'fs', mode: 'fail' }] }).id).not.toBe(a.id)
+    expect(norm({ tools: ['fs', 'pwsh'], faults: [{ tool: 'fs', mode: 'fail' }] }).id).not.toBe(
+      a.id,
+    )
   })
 
   it('keeps a caller-supplied id verbatim and rejects an empty one', () => {
