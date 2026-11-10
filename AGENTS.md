@@ -6,7 +6,8 @@
 链到本文件为止 —— 父目录的规则一个字都读不到。
 
 - 版本以 [package.json](package.json) 的 `version` 为准。
-- 未发布（`private: true`）。要发版时先补 `docs/PUBLISHING.md`（尚未创建），不要照别的仓抄。
+- **未发布到 npm**，但**保持可发布形状**（没有 `private: true` —— `check:release` 会拒绝它）。
+  发版流程见 [docs/PUBLISHING.md](docs/PUBLISHING.md)。
 
 ## 这个仓做什么
 
@@ -50,17 +51,46 @@ Model + Harness = Agent        →       我们给「Harness」打分，不给�
 ## 验证
 
 ```
-pnpm run check     # typecheck + build + test
+pnpm run check     # typecheck + build + test + check:release
 ```
 
+四项，缺一项就是假的绿：
+
 - `pnpm run typecheck` —— `tsc -p tsconfig.json`，**0 error** 是硬要求。
-- `pnpm run test` —— 纯函数单测（fold / 归一化 / 特征提取）。**不连宿主、不联网、不花额度**。
-- **`pnpm run check` 不覆盖加载期**（`apply()` 里的每一行）—— 而加载期是「插件根本起不来」的唯一入口。
-  实测栽过：`'fs' in TOOL_KEYS`（`Set` 用 `in`，恒 false）让插件拒绝激活，而 check 全绿。
-  见 [.agents/notes/2026-11-10-first-real-machine-run.md](.agents/notes/2026-11-10-first-real-machine-run.md) §一。
-- 需要真宿主的那类验证（装进 profile、拉起子 agent）**不属于** `pnpm run check`，
-  它是人工步骤，见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 的「真机验证」节。
-  **不许把「装上了」当成「验过了」** —— 装上只证明模块能 import。
+- `pnpm run build` —— tsdown，产物进 `lib/`（git 忽略，由 `files` 发布）。
+- `pnpm run test` —— 纯函数单测 + **红线 8 组 23 条**（[test/redlines.test.ts](test/redlines.test.ts)）。
+  **不连宿主、不联网、不花额度**。
+- `pnpm run check:release` —— 发布态不变量（[scripts/check-release.mjs](scripts/check-release.mjs)）。
+  **它拒绝 `private: true`**，所以本仓必须保持可发布形状。
+
+**`pnpm run check` 不覆盖加载期**（`apply()` 里的每一行）—— 而加载期是「插件根本起不来」的唯一入口。
+实测栽过：`'fs' in TOOL_KEYS`（`Set` 用 `in`，恒 false）让插件拒绝激活，而 check 全绿。
+见 [.agents/notes/2026-11-10-first-real-machine-run.md](.agents/notes/2026-11-10-first-real-machine-run.md) §一。
+
+**红线做了反向控制**：把 `DEFAULT_TOOLS` 改成不存在的键、往源码注入一个 `mean()`，
+对应断言各自变红后再复原。**「现在这条绿」和「这条判据有牙齿」是两件事**，后者要单独证。
+
+需要真宿主的那类验证（装进 profile、拉起子 agent）**不属于** `pnpm run check`，
+它是人工步骤，见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 的「真机验证」节。
+**不许把「装上了」当成「验过了」** —— 装上只证明模块能 import。
+
+### 跨仓：组织的判据会自动核到本仓
+
+组织仓 `dsh-plugin-lab/.github` 的 `scripts/check-criteria.mjs` 按 **`dsh-` 前缀 + 清单有 `dsh` 字段**
+**自动发现**插件仓，每周独立核一次。**新建或改名都不需要登记**，但**必须满足它**。
+
+2026-11-10 首次核出 6 条（缺 `release.yml` 四条规则 / 缺 `release-drafter.yml` / 缺红线文件），
+已全部补齐，现在 `14 checks, 0 new findings`。
+
+- **核它要 `GITHUB_TOKEN`**：`GITHUB_TOKEN=$(gh auth token) node scripts/check-criteria.mjs`
+  （不带 token 会匿名超时，**超时不是通过**）。
+- **逐字件**：`.node-version`、`.gitattributes`、`pnpm-workspace.yaml`、`.github/workflows/ci.yml`、
+  `.github/workflows/release-drafter.yml`、`.github/dependabot.yml` 与模板**逐字相同**。
+  改它们之前先想清楚：**逐字件不一致会以「这个仓特殊」的形式留下来**。
+- **`release.yml` 只从兄弟仓取、不从模板生成**（模板里那几份是 token 渲染的或干脆不生成）。
+  取来之后**必须读一遍它断言了什么** —— 它包含发布顺序、OIDC、tag 形状这些不可撤销的动作。
+
+
 
 ### 当前验证状态（**这个会漂，别复述成永久保证**）
 
@@ -97,4 +127,5 @@ pnpm run check     # typecheck + build + test
 
 ## 发布前
 
-未定。`private: true` 时不要发。
+**未发布过。** 第一次发之前必须做的事，写在 [docs/PUBLISHING.md](docs/PUBLISHING.md) ——
+那里不抄别的仓的版本号与判例，只写**本仓自己的前置条件**。
