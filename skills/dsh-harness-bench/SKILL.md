@@ -82,10 +82,12 @@ what it is, and the two are different experiments:
 - **`timeout_ms` cancels the subject.** A trial it stops is recorded as `stopReason: "aborted"` with
   `timedOut: true` — an observation about the budget, not a harness failure, so do not count it as one
   when you compare runs.
-- **Stopping your own turn does not stop the subject.** A trial in flight finishes and is recorded; the
-  run returns a partial summary with `stopped: true` and starts no further trial. Stop the subject
-  itself from its own session. `job_kill` is the opposite: it does stop it, and the records already
-  written stay.
+- **Stopping your own turn stops everything.** The trial in flight is cancelled and recorded as
+  `aborted` (`timedOut: false`), and no further trial starts. What you get back is the host's
+  `Error: tool call aborted`, not a summary — read the run directory for what landed. To drop ONE trial
+  and keep the run going, interrupt that child from its own session instead: the run continues and the
+  trial lands as `aborted` with `interrupted: true`. `job_kill` behaves like stopping: it cancels the
+  trial in flight and keeps what was recorded.
 
 ## What the records say
 

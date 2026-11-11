@@ -1148,7 +1148,8 @@ describe('B22 — the skill is one page, and it says everything once', () => {
       /run_in_background/, // a long run is a job, not a held turn
       /attachments/, // a task can carry a picture or a file, and the two are different experiments
       /placeholder line/, // an image the route cannot deliver is refused, not silently swapped
-      /stopped: true/, // your own stop ends the waiting, not somebody else's work
+      /tool call aborted/, // a stopped foreground call returns the host's error, not a summary
+      /interrupted: true/, // drop ONE trial and keep the run: that is the child's own interrupt
     ]) {
       expect(body, `the skill no longer states ${String(fact)}`).toMatch(fact)
     }
@@ -1324,55 +1325,77 @@ describe('B23 — a trial stopped by its own budget is stopped, not just labelle
   })
 })
 
-describe('B28 — a stop ends the waiting, not somebody else’s work', () => {
+describe('B28 — a stop stops everything', () => {
   /**
-   * The rule: a subject is independent work, and who may stop it is a decision, not a side effect.
+   * The rule: a stop is a stop, not a request to be honoured after the current trial.
    *
-   * A child gets its own Session and its own turn, so nothing propagates into it by itself. The two
-   * callers want opposite things and both are right: interrupting the calling turn means "I will not
-   * read any more of this", while `job_kill` means "stop that run". Wiring both to `dispose()` made the
-   * first one kill work its owner never asked to kill, and the second interpretation is the reason the
-   * field exists at either call site rather than being implied by which signal was passed.
+   * A subject is its own Session with its own turn, so nothing propagates into it by itself — which means
+   * a stop that only sets a flag leaves the subject working and the button looking broken. Measured
+   * 2026-11-11: pressing stop during trial 2 of a foreground run let that trial run to completion (30s)
+   * before anything happened, because the previous wiring only stopped *starting* the next trial. The
+   * wait was not the button failing; it was the design, and the design was wrong for a stop button.
    *
-   * The other half of the same rule is what a stop must NOT do: it must not throw away a directory that
-   * holds records, and it must not leave one that holds none.
+   * Two other intentions stay where they belong, and this red line must not swallow them:
+   *
+   * - "stop this one trial, keep the run" — the host's `interrupt` from that child's own session; the
+   *   trial lands as `aborted` with `interrupted: true` and the next trial still starts (verified on this
+   *   machine: two interrupted trials, three records, run completed).
+   * - "this run is void" — `job_kill`, which reaches the same code through the job's own controller.
    */
-  it('stops starting trials instead of throwing away the one in flight', () => {
+  it('cancels the trial in flight and starts no more', () => {
     const body = stripComments(sources().get('src/run.ts') ?? '')
-    // The loop breaks; it does not `throwIfAborted()`, which would abandon a trial mid-thought.
-    expect(body).toMatch(/if \(stop\.signal\.aborted\) \{/)
+    // The loop breaks at the boundary, so a stop between trials costs no mount. Matched as one block:
+    // an assertion on the `if` alone stayed green when the `break` was deleted, which is the whole
+    // behaviour being asserted.
+    expect(body).toMatch(/if \(stop\.aborted\) \{\s*\n\s*stopped = true\s*\n\s*break/)
+    // …and does not `throwIfAborted()`, which would abandon the run without saying how much landed.
     expect(body).not.toContain('throwIfAborted')
-    // And the outcome is reported rather than inferred from a short count.
     expect(body).toMatch(/stopped = true/)
     expect(body).toMatch(/outcomes,\s*\n\s*stopped,/)
+    // The in-flight trial is cancelled through the same signal, by disposing the activation. The whole
+    // listener is matched: `activation.dispose()` also appears in the trial's `finally`, so asserting the
+    // call alone stayed green after the listener body was emptied — which is the only part that stops a
+    // running child.
+    const trial = stripComments(sources().get('src/trial.ts') ?? '')
+    expect(trial).toMatch(/AbortSignal\.any\(\[signal, budget\]\)/)
+    expect(trial).toMatch(
+      /onceAborted\(trialSignal, \(\) => \{\s*\n\s*void activation\.dispose\(\)/,
+    )
   })
 
-  it('says which caller may cancel the subject, at both call sites', () => {
+  it('passes the caller’s own signal from both waits, with no opt-out field', () => {
     const tool = stripComments(sources().get('src/tools/harness-run.ts') ?? '')
-    // Foreground: the calling turn's stop leaves the subject alone.
-    expect(tool).toMatch(/signal: exec\.signal,\s*\n\s*stopSubject: false,/)
-    // Background: killing the job is an instruction about this run.
+    expect(tool).toMatch(/runBench\(ctx, depsForRun, request, parent, exec\.signal\)/)
     const background = tool.slice(tool.indexOf('function startBackground'))
-    expect(background).toMatch(/signal: controller\.signal, stopSubject: true/)
+    expect(background).toMatch(/controller\.signal/)
+    // A knob that is always the same value is a knob nobody reads: the decision is "a stop stops".
+    expect(sources().get('src/trial.ts') ?? '').not.toContain('stopSubject')
   })
 
-  it('only cancels the subject when the stop is allowed to', () => {
-    const code = stripComments(sources().get('src/trial.ts') ?? '')
-    // A stop that cannot cancel contributes nothing to the fused signal, so the budget is the only
-    // thing that can end the trial early — which is exactly what `timedOut` is then told.
-    expect(code).toMatch(/stop\.stopSubject\s*\n?\s*\?/)
-    expect(code).toMatch(/stop\.stopSubject \? stop\.signal : undefined/)
+  it('does not promise a return value the tool pipeline replaces', () => {
+    // Measured: after the body has been invoked, cancellation SUPERSEDES the result with
+    // `Error: tool call aborted` (`dsh-tools` pipeline.js, `toolAbortedResult`). So a foreground call
+    // that is stopped never shows its summary, and the records on disk are the whole account. A comment
+    // claiming otherwise would be the exact kind of false promise this file exists to prevent.
+    const tool = sources().get('src/tools/harness-run.ts') ?? ''
+    expect(tool).toMatch(/Error: tool call aborted/)
+    // The same fact is stated where `stopped` is declared, because that is the field a reader would
+    // wrongly expect to see in a foreground result.
+    expect(sources().get('src/run.ts') ?? '').toMatch(/replaces an aborted call's result/)
   })
 
   it('does not blame the budget for a stop that happened before it fired', () => {
     const live = new AbortController()
     const fired = new AbortController()
     fired.abort()
-    // A caller that cannot cancel is the same as nobody stopping: the budget is what ended the trial.
-    expect(stoppedByBudget(fired.signal, undefined, 'aborted')).toBe(true)
-    expect(stoppedByBudget(fired.signal, undefined, 'completed')).toBe(false)
-    expect(stoppedByBudget(undefined, undefined, 'aborted')).toBe(false)
-    expect(stoppedByBudget(live.signal, undefined, 'aborted')).toBe(false)
+    const stopped = new AbortController()
+    stopped.abort()
+    // The budget ended it, nobody stopped it.
+    expect(stoppedByBudget(fired.signal, live.signal, 'aborted')).toBe(true)
+    // A caller stop is not a timeout, even when the budget had already fired.
+    expect(stoppedByBudget(fired.signal, stopped.signal, 'aborted')).toBe(false)
+    expect(stoppedByBudget(undefined, live.signal, 'aborted')).toBe(false)
+    expect(stoppedByBudget(live.signal, live.signal, 'aborted')).toBe(false)
   })
 
   it('settles a killed job as killed, even though a stop is not an error', () => {

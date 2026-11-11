@@ -43,8 +43,8 @@ harness 文件的裸模块名只在那里解析得到（见 [AGENTS.md](AGENTS.m
 
 | 文件 | 导出 | 谁依赖 | 改后必跑 |
 |---|---|---|---|
-| [run.ts](run.ts) | `runBench` / `summaryLine` / `RunRequest` / `RunSummary` | `tools/harness-run`（两条等待都调它） | **B6 / B8 / B10 / B15**（执行体搬家后仍在这里）+ **B26**（唯一执行体）+ **B28**（喊停返回部分摘要、目录判据是"有没有记录"） |
-| [trial.ts](trial.ts) | `runTrial` / `stoppedByBudget` / `RunStop` / `TrialPlan` / `TrialOutcome` | `run` | **B23** + **B28**（`stopSubject` 决定谁能取消受试体）+ `fold` 单测 |
+| [run.ts](run.ts) | `runBench` / `summaryLine` / `RunRequest` / `RunSummary` | `tools/harness-run`（两条等待都调它） | **B6 / B8 / B10 / B15**（执行体搬家后仍在这里）+ **B26**（唯一执行体）+ **B28**（一次停止停一切；`stopped` 只在后台读得到） |
+| [trial.ts](trial.ts) | `runTrial` / `stoppedByBudget` / `TrialPlan` / `TrialOutcome` | `run` | **B23 / B28**（融合信号里始终有调用方的信号）+ `fold` 单测 |
 | [abort.ts](abort.ts) | `onceAborted` | `trial` | `abort` 单测 |
 | [jobs.ts](jobs.ts) | `jobOutcomeOf` + `JobRegistry` 等结构类型 | `tools/harness-run` | **B26 / B28**（`killed` / `failed` 分清；没抛的喊停也是 `killed`；`detail` 只放一行） |
 | [collector.ts](collector.ts) | `FoldCollector` | `run` | `fold` 单测 |

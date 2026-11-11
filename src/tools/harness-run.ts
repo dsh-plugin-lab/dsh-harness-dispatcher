@@ -255,12 +255,11 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
           })
         }
 
-        const summary = await runBench(ctx, depsForRun, request, parent, {
-          // A stopped turn stops this call, not the subject: the trials already on disk are complete
-          // records, and the subject belongs to its own operator.
-          signal: exec.signal,
-          stopSubject: false,
-        })
+        // The caller's stop cancels the trial in flight as well: a stop means the experiment is
+        // abandoned, and a button whose effect waits for one more trial reads as broken. The pipeline
+        // replaces this call's return value with `Error: tool call aborted`, so the records on disk are
+        // what the caller has left to read.
+        const summary = await runBench(ctx, depsForRun, request, parent, exec.signal)
         const completed = summary.outcomes.filter(
           (outcome) => outcome.stopReason === 'completed',
         ).length
@@ -359,8 +358,8 @@ function startBackground(
             runDeps,
             request,
             parent,
-            // Killing this job is an explicit instruction about this run, so it does stop the subject.
-            { signal: controller.signal, stopSubject: true },
+            // The job's own controller: the tool call has returned, so its signal is spent.
+            controller.signal,
             {
               onTrial: (outcome, recorded) => {
                 job.updateProgress(`trial ${String(recorded)}/${String(request.trials)}`)

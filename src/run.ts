@@ -18,8 +18,11 @@
  * read-back produced a run directory with an empty `trials.jsonl` — a plausible empty result, the worst
  * outcome an experiment can have.
  *
- * Step 4 answers to a stop by **not starting the next trial**: the trial in flight is the subject's own
- * work, and {@link RunStop.stopSubject} is who decides whether a stop also cancels it.
+ * Step 4 stops at the first sign of a stop: the trial in flight is **cancelled and recorded as
+ * `aborted`**, and no further trial starts. A stop means the experiment is abandoned, so leaving a
+ * subject running would produce a record nobody asked for — and a stop whose visible effect arrives one
+ * trial later reads as a broken button. (Stopping *one* trial and keeping the run is a different
+ * intention, and the host serves it from that child's own session.)
  *
  * @module dsh-harness-dispatcher/run
  */
@@ -41,7 +44,7 @@ import type { RunHandle } from './record.ts'
 import { hostToolNames, mountSubject, presetIdFor } from './subject.ts'
 import type { Subject } from './subject.ts'
 import { runTrial } from './trial.ts'
-import type { RunStop, TrialOutcome } from './trial.ts'
+import type { TrialOutcome } from './trial.ts'
 
 /** Everything one run needs. Resolved and validated by the caller, so nothing here can be rejected late. */
 export interface RunRequest {
@@ -92,6 +95,10 @@ export interface RunSummary {
    * Reported rather than inferred: `outcomes.length < trials` means either "stopped" or "the loop
    * threw", and a reader who has to guess which will guess wrong. A stopped run is not a failure — the
    * trials that ran are data, and the ones that did not were never started.
+   *
+   * Read this in a **background** run's notice. A foreground call that gets stopped never shows its
+   * return value at all: the tool pipeline replaces an aborted call's result with `Error: tool call
+   * aborted`, so for that path the records on disk are the only account of what landed.
    */
   readonly stopped: boolean
 }
@@ -134,7 +141,7 @@ export function summaryLine(summary: RunSummary): string {
  * @param deps - registries, seams and where records live.
  * @param request - the validated stimulus and task.
  * @param parent - the calling agent, which supplies lineage and the default working directory.
- * @param stop - the stop request and what it may stop; see {@link RunStop}.
+ * @param stop - cancellation for the whole run: a stop cancels the trial in flight and starts no more.
  * @param observer - optional per-trial reporting.
  * @returns the finished run; a partial run is still returned as an exception carrying its count.
  * @throws {Error} when the harness cannot be mounted, or the run fails after recording began.
@@ -144,7 +151,7 @@ export async function runBench(
   deps: RunDeps,
   request: RunRequest,
   parent: Agent,
-  stop: RunStop,
+  stop: AbortSignal,
   observer?: RunObserver,
 ): Promise<RunSummary> {
   const { harness, faults, runId } = request
@@ -203,11 +210,11 @@ export async function runBench(
       faults,
     }
 
-    // A stop means "start no more trials", never "throw away the one running". The subject is its own
-    // Session, so a trial in flight is somebody else's work to stop — and a trial cut off mid-thought
-    // would produce a record that says less than the one it was going to produce a moment later.
+    // A stop abandons the experiment: the trial in flight is cancelled (through its own signal, inside
+    // `runTrial`) and recorded as `aborted`, then nothing new starts. The check comes first so a stop
+    // that landed between two trials costs no mount and leaves no half-started child.
     for (let index = 1; index <= request.trials; index += 1) {
-      if (stop.signal.aborted) {
+      if (stop.aborted) {
         stopped = true
         break
       }
