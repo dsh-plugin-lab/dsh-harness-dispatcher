@@ -1,6 +1,6 @@
 # test/ — 覆盖范围与运行
 
-8 个文件 110 条。**不连宿主、不联网、不花额度**。约束见 [AGENTS.md](AGENTS.md)。
+8 个文件 113 条。**不连宿主、不联网、不花额度**。约束见 [AGENTS.md](AGENTS.md)。
 
 ## 怎么跑
 
@@ -14,7 +14,7 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 
 | 文件 | 条数 | 覆盖 | 对应源码 |
 |---|---|---|---|
-| [redlines.test.ts](redlines.test.ts) | 52 | **红线 B1–B15**：本仓的宪法 | 横切全仓 |
+| [redlines.test.ts](redlines.test.ts) | 55 | **红线 B1–B16**：本仓的宪法 | 横切全仓 |
 | [harness.test.ts](harness.test.ts) | 17 | 路径候选、扩展名、捕获、挂载行、`file:` URL | [src/harness.ts](../src/harness.ts) |
 | [fold.test.ts](fold.test.ts) | 12 | 事件折叠成确定性特征、缺数据 ≠ 0 | [src/fold.ts](../src/fold.ts) |
 | [shortcut.test.ts](shortcut.test.ts) | 9 | 捷径编译、工具排序、persona 变体 | [src/shortcut.ts](../src/shortcut.ts) |
@@ -23,7 +23,7 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 | [catalog.test.ts](catalog.test.ts) | 4 | 目录键、默认集、描述生成 | [src/catalog.ts](../src/catalog.ts) |
 | [smoke.test.ts](smoke.test.ts) | 3 | 模块能 import、注册面存在 | [src/index.ts](../src/index.ts) |
 
-## 红线 B1–B15 各管什么
+## 红线 B1–B16 各管什么
 
 | 编号 | 判据 |
 |---|---|
@@ -42,6 +42,7 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 | B13 | 一个词管一件事（源码无 `quick` / `assembly` / `effect` 等旧词） |
 | B14 | 文档不指向已删文件、不提已退休的工具名 |
 | B15 | 封起来的 harness 是完整工具集：遮罩行排在 harness 行之前 |
+| B16 | 源码 import 的包必须在清单里声明；peer 与 dev 范围相同；有运行时导入的包必须 external |
 
 ## 已知盲区（**不是遗漏，是边界**）
 

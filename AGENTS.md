@@ -56,7 +56,7 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 **六步就是 CI 那六步**，红线 **B9** 钉住这条等价性 —— `check` 曾只跑前四项，于是本机全绿、推上去红了
 （[经过](.agents/notes/2026-11-11-local-check-must-equal-ci.md)）。
 
-- `test` 是纯函数单测 + **红线 15 组 52 条**，共 8 个文件 110 条；**不连宿主、不联网、不花额度**。
+- `test` 是纯函数单测 + **红线 16 组 55 条**，共 8 个文件 113 条；**不连宿主、不联网、不花额度**。
   覆盖与红线清单见 [test/README.md](test/README.md)。
 - **手改过源码就跑** `lint` / `format:check`。**改文件只用编辑工具**：PowerShell 的
   `Get-Content`/`Set-Content` 往返会改坏字符（实测把 `harnessDir` 毁成 `harnessiir`）。
