@@ -295,24 +295,26 @@ function assertUsable(surface: CapabilitySurface): void {
 /**
  * Rows that are declared but contribute nothing — the failure mode the activation audit cannot see.
  *
- * Reported as data rather than thrown: a harness with one denied row may still be exactly what the
- * operator intended to measure, but they must be told, because the record would otherwise credit the
- * whole file with an effect only part of it had.
+ * **Not** a blocking problem, and the distinction is measured: an exported `minimal` harness reaches the
+ * subject with two callable tools while two of its rows are denied by the profile's policy, and a run of
+ * exactly that file completed. Calling it "not runnable" would have had an operator abandon a working
+ * harness. The record still has to be told which rows were dead, because otherwise it credits the whole
+ * file with an effect only part of it had.
  * @param surface - the observed surface.
  * @returns one line per row that mounts but does not run.
  */
-export function rowProblems(surface: CapabilitySurface): string[] {
-  const problems: string[] = []
+export function rowWarnings(surface: CapabilitySurface): string[] {
+  const warnings: string[] = []
   for (const row of surface.rows) {
     const label = `${row.id ?? '(no id)'} (${row.module})`
     if (row.enabled === false) {
-      problems.push(
+      warnings.push(
         `${label}: mounted disabled — the profile's compatibility policy does not admit it, ` +
           'so it contributes nothing to the subject',
       )
     } else if (row.enabled === 'conditional') {
-      problems.push(`${label}: enablement could not be evaluated outside a mount`)
+      warnings.push(`${label}: enablement could not be evaluated outside a mount`)
     }
   }
-  return problems
+  return warnings
 }

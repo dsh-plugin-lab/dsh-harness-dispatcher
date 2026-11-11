@@ -24,7 +24,7 @@ import {
   mountSubject,
   presetIdFor,
   presetList,
-  rowProblems,
+  rowWarnings,
   surfaceOf,
 } from '../subject.ts'
 import type { CapabilitySurface, PresetSummary } from '../subject.ts'
@@ -86,7 +86,10 @@ const OUTPUT_SCHEMA = {
         },
       },
     },
+    // Blocking: the run would fail, or would not be the experiment that was asked for.
     problems: { type: 'array', required: true, items: { type: 'string' } },
+    // Advisory: it runs, and these rows contribute nothing to it.
+    warnings: { type: 'array', required: true, items: { type: 'string' } },
   },
 } as const
 
@@ -143,11 +146,14 @@ export function registerHarnessInspect(ctx: Context, deps: HarnessInspectDeps): 
             ]
           }
           const head =
-            `${value.ok ? 'harness ok' : 'harness NOT runnable'}: ${value.target.label}` +
-            `${value.target.fingerprint === undefined ? '' : ` (${value.target.fingerprint})`}`
+            `${value.ok ? 'harness ok' : 'harness CANNOT run as asked'}: ${value.target.label}` +
+            `${value.target.fingerprint === undefined ? '' : ` — fingerprint ${value.target.fingerprint}`}`
           const tools = `${String(value.tools?.length ?? 0)} tool(s): ${value.tools?.join(', ') ?? '(none)'}`
           const lines = [head, tools, skillLine(value.tools ?? [], value.skills)]
           if (value.problems.length > 0) lines.push('', `Problems:\n${value.problems.join('\n')}`)
+          // Separate from problems on purpose: a denied row does not stop the run, and saying it does
+          // would send an operator away from a harness that works.
+          if (value.warnings.length > 0) lines.push('', `Warnings:\n${value.warnings.join('\n')}`)
           return [{ type: 'text', text: lines.join('\n') }]
         },
       },
@@ -168,6 +174,7 @@ export function registerHarnessInspect(ctx: Context, deps: HarnessInspectDeps): 
               rows: preset.rows,
             })),
             problems: [],
+            warnings: [],
           }
         }
 
@@ -189,6 +196,7 @@ export function registerHarnessInspect(ctx: Context, deps: HarnessInspectDeps): 
             ...(row.fiberState === null ? {} : { fiberState: row.fiberState }),
           })),
           problems,
+          warnings: [...facts.warnings],
         }
       },
     }),
@@ -224,7 +232,10 @@ function firstLine(text: string): string {
 /** What one inspection found, before problems are assembled. */
 interface InspectionFacts {
   readonly surface: CapabilitySurface
+  /** Blocking: a run of this harness would fail, or would not be the experiment asked for. */
   readonly problems: readonly string[]
+  /** Advisory: rows that mounted but contribute nothing. */
+  readonly warnings: readonly string[]
   readonly target: {
     readonly kind: string
     readonly label: string
@@ -256,7 +267,8 @@ async function inspect(
     const surface = await surfaceOf(ctx, args.preset)
     return {
       surface,
-      problems: [...rowProblems(surface), ...(routeProblem === undefined ? [] : [routeProblem])],
+      problems: routeProblem === undefined ? [] : [routeProblem],
+      warnings: rowWarnings(surface),
       target: { kind: 'preset', label: args.preset },
     }
   }
@@ -279,10 +291,8 @@ async function inspect(
     const captured = resolved.captured
     return {
       surface: subject.surface,
-      problems: [
-        ...rowProblems(subject.surface),
-        ...(routeProblem === undefined ? [] : [routeProblem]),
-      ],
+      problems: routeProblem === undefined ? [] : [routeProblem],
+      warnings: rowWarnings(subject.surface),
       target: {
         kind: 'harness',
         label: harnessLabel(captured),

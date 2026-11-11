@@ -19,7 +19,7 @@ import { normalizeFaults } from '../src/fault.ts'
 import { harnessRows, harnessLabel, sealedRows } from '../src/harness.ts'
 import { normalizeShortcut, shortcutRows } from '../src/shortcut.ts'
 import { SKILL_NAME, readSkill, registerSkill, splitFrontmatter } from '../src/skill.ts'
-import { presetIdFor, presetSummaries } from '../src/subject.ts'
+import { presetIdFor, presetSummaries, rowWarnings } from '../src/subject.ts'
 import { toolSpecOf } from '../src/tool.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
@@ -799,6 +799,64 @@ describe('B24 — a registered skill is loadable, not merely listed', () => {
     expect(entry.source).not.toBe('')
     expect(entry.content).toBe(body)
     expect(entry.name).toBe(SKILL_NAME)
+  })
+})
+
+describe('B25 — a verdict names the thing it measured', () => {
+  /**
+   * The rule: a label must not claim more than the check behind it. Two measured violations, both found
+   * by reading the tools' own output on a live host:
+   *
+   * 1. An exported `minimal` harness was reported `harness NOT runnable` because two of its rows were
+   *    denied by the profile's policy — while the very same file, run as it was, completed with two
+   *    callable tools. `ok` was `problems.length === 0`, which made an advisory row a verdict.
+   * 2. `harness_export` printed `digest 245ec695` for the file it wrote and an inspection of that same
+   *    file printed `36b1b6d7`: a hash of the bytes versus a fingerprint over bytes + route + depth.
+   *    Two 8-hex values, one word.
+   */
+  it('classifies a dead row as a warning, and keeps blocking problems separate', () => {
+    const surface = {
+      rows: [
+        {
+          id: 'bench-harness:tool-fs',
+          module: '@deepseek-ai/dsh-tool-fs',
+          enabled: true,
+          fiberState: null,
+        },
+        {
+          id: 'bench-harness:terminal-bash',
+          module: '@deepseek-ai/dsh-terminal-bash',
+          enabled: false,
+          fiberState: null,
+        },
+      ],
+      tools: ['read'],
+      skills: [],
+    } as const
+    const warnings = rowWarnings({ ...surface, rows: [...surface.rows] })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('terminal-bash')
+    // And nothing at all for a harness whose rows all contribute.
+    expect(rowWarnings({ ...surface, rows: [surface.rows[0]], skills: [] })).toEqual([])
+  })
+
+  it('does not let a warning turn the verdict into "cannot run"', () => {
+    const code = stripComments(sources().get('src/tools/harness-inspect.ts') ?? '')
+    // The verdict counts blocking problems only, and the two lists are rendered apart.
+    expect(code).toMatch(/ok: problems\.length === 0/)
+    expect(code).toMatch(/warnings: \[\.\.\.facts\.warnings\]/)
+    expect(code).toContain('`Problems:')
+    expect(code).toContain('`Warnings:')
+    // A row that mounted disabled lives in the warning list by construction.
+    expect(code).toMatch(/warnings: rowWarnings\(/)
+  })
+
+  it('names the file digest and the fingerprint differently', () => {
+    // Same word for two quantities is how a reader concludes the file changed between two runs.
+    const exported = stripComments(sources().get('src/tools/harness-export.ts') ?? '')
+    expect(exported).toContain('file digest')
+    const inspected = stripComments(sources().get('src/tools/harness-inspect.ts') ?? '')
+    expect(inspected).toContain('fingerprint ${value.target.fingerprint}')
   })
 })
 

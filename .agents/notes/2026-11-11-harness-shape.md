@@ -449,6 +449,9 @@ ctx（宿主）**，不是调用方 —— 条目落进全局层，与被遮对�
 | 故障点名不可达工具 | `faults: [{tool: 'web_search'}]` 对只有 fs 的 harness | 被拒，且列出**实际可调**的四个工具名 |
 | 未达 trial 1 的 run | 上面那次失败之后 | **目录不存在** —— `discard()` 真机确认 |
 | 超时 | `timeout_ms: 700` 配一个会长篇大论的题 | **缺陷**，见 §7.7 |
+| 路由覆盖 | 显式 `provider` + `model` 跑一次 | 生效：`modelInput.route` 就是给的这两个，指纹随之改变 |
+| 导出 → 直接跑 | `harness_export { preset: 'minimal' }` 写出的文件**不编辑**就 `harness_run` | 跑通；**不 sealed 时 39 个工具**（含 `harness_run` 自己），sealed 只剩 2 个 |
+| 结构化输出 | `output_schema` 要 `{answer:number}` | 记录里 `structured: {"answer":42}`，schema 原文在 `run.json` 的 `task` |
 
 两个变体人设的字符差只有 13–63，因为 **persona 行是替换不是追加**：它用
 `PERSONA_PREFIX_SECTION` 这个名字注册（见 `dsh-persona/lib/index.js`），在 preset 作用域里把部署人设
@@ -507,6 +510,26 @@ loaded skill "dsh-harness-bench" source must be a string
 **没有一条真的走一遍加载路径**。所以红线 **B24** 不再扫源码，而是拿一个假注册表把
 `registerSkill()` 跑一遍，断言它交出去的对象带 `source` 字符串、正文逐字不变 —— 这条断言在旧实现上
 立刻红（`expected 'undefined' to be 'string'`）。
+
+### 7.9 第六、第七个：判定词说错了事实
+
+两处都是「读工具自己吐出的字」才发现的，各占一行：
+
+**`harness NOT runnable` 说一个跑得起来的 harness 不能跑。** 把 `minimal` 导出成文件、**不做任何编辑**直接
+`harness_run`：跑通了，2 个可调工具。回过头 `harness_inspect` 同一份文件，却判 `harness NOT runnable` ——
+因为 `ok` 写的是 `problems.length === 0`，而「两行被 profile 策略禁用」也算 problem。那是一条**建议性**
+事实：文件照样能跑，只是那两行不出力。判定词与它背后的检查不是一回事，于是「有警告」被读成「不能用」，
+代价是操作者会放弃一份能用的 harness。
+
+修法是把两级分开：`problems`（这次 run 会失败，或不是要做的那个实验 —— 例如故障点名了不可达的工具）
+与 `warnings`（挂载了但不出力），`ok` 只看前者，渲染分两段。红线 **B25**。
+
+**同一个词指了两个量。** `harness_export` 报 `digest 245ec695`，随后 `harness_inspect` 对**同一个文件**报
+`36b1b6d7`。前者是文件字节的摘要，后者是指纹（字节 + 路由 + 深度，记录之间就是按它比的）—— 两个 8 位
+十六进制、一个词，读者只会得出「文件被改过」。
+
+修法是把两处各自命名：`file digest …` 与 `fingerprint …`。它看起来是文案问题，但记录的可比性全靠读者
+分清这两个数。
 
 ---
 
