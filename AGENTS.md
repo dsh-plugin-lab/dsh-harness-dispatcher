@@ -79,6 +79,16 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 
 **红线做过反向控制**：「现在这条绿」和「这条判据有牙齿」是两件事，后者要单独证。
 
+### 检查选择
+
+- `src/` / `test/` 的语义 → `pnpm run check`，六个都跑，别自己挑。
+- 只改文档 → 链接校验（命令在[改动影响路由](#改动影响路由)）。
+- 只改配置（`tsconfig` / `eslint` / `tsdown`）→ `pnpm run typecheck && pnpm run build`。
+
+**钩子自动修、CI 只读查**，同一个工具同一个版本（`node_modules`，经 `pnpm exec`）。钩子**刻意不含**
+typecheck / 测试 / `check:release` —— 那些归 `check` 与 CI，一次提交不该为此多等十秒。启用见
+[README.md](README.md#development)。
+
 ## 当前验证状态（**会漂，别复述成永久保证**）
 
 - **主路径真机通过**（2026-11-10）：装进 profile → 拉起子 agent → 注入 `fail` → 记录落地。
