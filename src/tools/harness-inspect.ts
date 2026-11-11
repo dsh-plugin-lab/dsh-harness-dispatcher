@@ -23,10 +23,11 @@ import {
   hostToolNames,
   mountSubject,
   presetIdFor,
+  presetList,
   rowProblems,
   surfaceOf,
 } from '../subject.ts'
-import type { CapabilitySurface } from '../subject.ts'
+import type { CapabilitySurface, PresetSummary } from '../subject.ts'
 import {
   FAULTS_PARAMETER,
   OPTIONAL_HARNESS,
@@ -54,11 +55,12 @@ const OUTPUT_SCHEMA = {
         originPath: { type: 'string' },
       },
     },
-    tools: { type: 'array', required: true, items: { type: 'string' } },
+    // Below: present only when a harness or preset was inspected. A listing mounts nothing, so it has
+    // no tools, no rows and no verdict — emitting empty arrays there would read like a measurement.
+    tools: { type: 'array', items: { type: 'string' } },
     skills: { type: 'array', items: { type: 'string' } },
     rows: {
       type: 'array',
-      required: true,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -67,6 +69,20 @@ const OUTPUT_SCHEMA = {
           module: { type: 'string', required: true },
           enabled: { type: 'json', required: true },
           fiberState: { type: 'json' },
+        },
+      },
+    },
+    presets: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string', required: true },
+          name: { type: 'string' },
+          isDefault: { type: 'boolean', required: true },
+          broken: { type: 'string' },
+          rows: { type: 'number', required: true },
         },
       },
     },
@@ -92,15 +108,16 @@ export function registerHarnessInspect(ctx: Context, deps: HarnessInspectDeps): 
       description:
         'Inspect a harness WITHOUT starting an agent or spending tokens. Reports whether it can serve ' +
         'as a run subject, which rows mounted but contribute nothing, and the tool and skill names the ' +
-        'subject could actually call. Accepts `preset` (a preset the host already has), or `harness` ' +
-        'as a file or the shortcut scalars. Start here: it is free, and it is the same resolution ' +
-        '`harness_run` uses.',
+        'subject could actually call. Call it with NO arguments to list the presets this host has ' +
+        '(the ids the other two tools take). Then name a target: `preset` for one the host already has, ' +
+        'or `harness` as a file or the shortcut scalars. Start here: it is free, and it is the same ' +
+        'resolution `harness_run` uses.',
       parameters: {
         preset: {
           type: 'string',
           description:
-            'Inspect a preset the host already has, by id (e.g. "standard"). No file needed, nothing ' +
-            'is mounted privately. Pass this OR `harness`.',
+            'Inspect a preset the host already has, by id (e.g. "standard"). Call the tool with no ' +
+            'arguments at all to see which ids exist. No file needed, nothing is mounted privately.',
         },
         ...OPTIONAL_HARNESS,
         ...ROUTE_PARAMETERS,
@@ -109,23 +126,51 @@ export function registerHarnessInspect(ctx: Context, deps: HarnessInspectDeps): 
       output: {
         schema: OUTPUT_SCHEMA,
         render: (_args, value) => {
+          if (value.presets !== undefined) {
+            return [
+              {
+                type: 'text',
+                text: presetLines(
+                  value.presets.map((preset) => ({
+                    id: preset.id,
+                    name: preset.name ?? null,
+                    isDefault: preset.isDefault,
+                    broken: preset.broken ?? null,
+                    rows: preset.rows,
+                  })),
+                ),
+              },
+            ]
+          }
           const head =
             `${value.ok ? 'harness ok' : 'harness NOT runnable'}: ${value.target.label}` +
             `${value.target.fingerprint === undefined ? '' : ` (${value.target.fingerprint})`}`
-          const tools = `${String(value.tools.length)} tool(s): ${value.tools.join(', ') || '(none)'}`
-          return [
-            {
-              type: 'text',
-              text:
-                value.problems.length === 0
-                  ? `${head}\n${tools}\n${skillLine(value)}`
-                  : `${head}\n${tools}\n${skillLine(value)}\n\nProblems:\n${value.problems.join('\n')}`,
-            },
-          ]
+          const tools = `${String(value.tools?.length ?? 0)} tool(s): ${value.tools?.join(', ') ?? '(none)'}`
+          const lines = [head, tools, skillLine(value.tools ?? [], value.skills)]
+          if (value.problems.length > 0) lines.push('', `Problems:\n${value.problems.join('\n')}`)
+          return [{ type: 'text', text: lines.join('\n') }]
         },
       },
       isConcurrencySafe: () => false,
       async execute(args) {
+        // Neither form names a target, so answer the question that comes before any other: what is
+        // there? Without this a caller who does not already know a preset id cannot use the bench.
+        if (args.preset === undefined && args.harness === undefined) {
+          const presets = await presetList(ctx)
+          return {
+            ok: true,
+            target: { kind: 'presets', label: `${String(presets.length)} preset(s)` },
+            presets: presets.map((preset) => ({
+              id: preset.id,
+              ...(preset.name === null ? {} : { name: preset.name }),
+              isDefault: preset.isDefault,
+              ...(preset.broken === null ? {} : { broken: preset.broken }),
+              rows: preset.rows,
+            })),
+            problems: [],
+          }
+        }
+
         const facts = await inspect(ctx, args, deps)
         const faults = normalizeFaults(faultsOf(args))
         const problems = [...facts.problems]
@@ -148,6 +193,32 @@ export function registerHarnessInspect(ctx: Context, deps: HarnessInspectDeps): 
       },
     }),
   )
+}
+
+/**
+ * The listing, as a reader needs it: the default marked, and a preset that cannot mount saying why.
+ * @param presets - the listing.
+ * @returns one block of text.
+ */
+function presetLines(presets: readonly PresetSummary[]): string {
+  if (presets.length === 0) return 'this host reports no presets'
+  const lines = presets.map((preset) => {
+    const marks = [preset.isDefault ? 'default' : '', preset.broken === null ? '' : 'cannot mount']
+      .filter((mark) => mark !== '')
+      .join(', ')
+    const detail =
+      preset.broken === null ? `${String(preset.rows)} row(s)` : firstLine(preset.broken)
+    return `  ${preset.id}${marks === '' ? '' : ` (${marks})`} — ${detail}`
+  })
+  return [
+    `${String(presets.length)} preset(s) on this host. Inspect one with { preset: "<id>" }.`,
+    ...lines,
+  ].join('\n')
+}
+
+/** The first line of a multi-line host diagnostic, which is the part that names the cause. */
+function firstLine(text: string): string {
+  return text.split('\n')[0] ?? text
 }
 
 /** What one inspection found, before problems are assembled. */
@@ -285,18 +356,16 @@ function checkFaults(
  * reach, and names it can load. Printing the names alone left a reader unable to tell "no skills" from
  * "nobody looked" — and the scope's six inherited skills used to be reported for a subject with no way
  * to call one.
- * @param value - the tool's own output.
+ * @param tools - tool names callable in the subject's scope.
+ * @param skills - loadable skill names, or `undefined` when this host has no registry.
  * @returns one line.
  */
-function skillLine(value: {
-  readonly tools: readonly string[]
-  readonly skills?: readonly string[]
-}): string {
-  if (value.skills === undefined) return 'no skill registry on this host'
-  if (value.skills.length === 0) {
-    return value.tools.includes(SKILL_TOOL)
+function skillLine(tools: readonly string[], skills: readonly string[] | undefined): string {
+  if (skills === undefined) return 'no skill registry on this host'
+  if (skills.length === 0) {
+    return tools.includes(SKILL_TOOL)
       ? '0 skill(s)'
       : `0 skill(s): no \`${SKILL_TOOL}\` tool here, so none is loadable`
   }
-  return `${String(value.skills.length)} skill(s): ${value.skills.join(', ')}`
+  return `${String(skills.length)} skill(s): ${skills.join(', ')}`
 }

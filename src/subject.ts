@@ -126,6 +126,61 @@ export async function hostSkillNames(ctx: Context): Promise<readonly string[]> {
  */
 export const SKILL_TOOL = 'skill'
 
+/** One preset, as a listing shows it. */
+export interface PresetSummary {
+  readonly id: string
+  readonly name: string | null
+  readonly isDefault: boolean
+  /** Why its rows cannot be read, or `null`. A broken preset is listed, never hidden. */
+  readonly broken: string | null
+  /** Declared row count; `0` for a broken preset, whose rows cannot be counted. */
+  readonly rows: number
+}
+
+/** The inventory entry this module reads. Structural, for the same reason as {@link SkillCatalog}. */
+interface PresetComposition {
+  readonly id: string
+  readonly name?: string
+  readonly isDefault: boolean
+  readonly broken?: string
+  readonly rows: readonly unknown[]
+}
+
+/**
+ * Every preset the host knows, in the order a caller should read them.
+ *
+ * A preset whose rows cannot be read is **listed with its reason** rather than dropped: a listing that
+ * hid it would leave the caller picking a different id and wondering why nothing matches, and "the
+ * option you wanted was there and unusable" is the fact they need.
+ *
+ * Pure, so the ordering and the broken-row handling are testable without a host.
+ * @param inventory - whatever `compositionInventory()` returned.
+ * @returns the default preset first, then the rest by id.
+ */
+export function presetSummaries(inventory: readonly PresetComposition[]): readonly PresetSummary[] {
+  return inventory
+    .map((preset) => ({
+      id: preset.id,
+      name: preset.name ?? null,
+      isDefault: preset.isDefault,
+      broken: preset.broken ?? null,
+      rows: preset.rows.length,
+    }))
+    .sort((left, right) => {
+      if (left.isDefault !== right.isDefault) return left.isDefault ? -1 : 1
+      return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+    })
+}
+
+/**
+ * Every preset the host knows. Costs nothing: no mount, no scope lease, no agent.
+ * @param ctx - context that owns the preset registry.
+ * @returns the listing.
+ */
+export async function presetList(ctx: Context): Promise<readonly PresetSummary[]> {
+  return presetSummaries(await ctx.agentPresets.compositionInventory())
+}
+
 /**
  * The skill registry as this module needs it.
  *
