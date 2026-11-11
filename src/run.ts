@@ -37,6 +37,7 @@ import type { FoldCollector } from './collector.ts'
 import { assertFaultsReachable } from './fault.ts'
 import type { Fault } from './fault.ts'
 import type { FaultGate } from './gate.ts'
+import type { HostRead } from './host.ts'
 import type { ResolvedHarness } from './harness.ts'
 import { harnessLabel, harnessRows, mountPathFor, sealedRows } from './harness.ts'
 import { openRun, stimulusRecord } from './record.ts'
@@ -66,6 +67,13 @@ export interface RunRequest {
   /** `0` disables the per-trial budget. */
   readonly timeoutMs: number
   readonly trials: number
+  /**
+   * Keep each subject's committed events verbatim in `events.jsonl`.
+   *
+   * On by default, and that default is the point: a record holding only aggregates cannot be re-folded
+   * under a definition this plugin never had, which is what "analysis happens outside" requires.
+   */
+  readonly recordEvents: boolean
 }
 
 /** One trial, as the caller sees it. */
@@ -109,6 +117,8 @@ export interface RunDeps {
   readonly subagents: SubagentRuntime
   readonly gate: FaultGate
   readonly collector: FoldCollector
+  /** Read the host's own projection values for a subject Session; see {@link TrialDeps.readHost}. */
+  readonly readHost: (session: unknown) => HostRead
   readonly outputRoot: string
 }
 
@@ -208,6 +218,7 @@ export async function runBench(
       maxDepth: harness.maxDepth,
       route: stimulus.route,
       faults,
+      recordEvents: request.recordEvents,
     }
 
     // A stop abandons the experiment: the trial in flight is cancelled (through its own signal, inside

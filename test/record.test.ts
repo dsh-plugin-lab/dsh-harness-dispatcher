@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { CATALOG } from '../src/catalog.ts'
 import { resolveHarness } from '../src/harness.ts'
-import { openRun, stimulusRecord } from '../src/record.ts'
+import { EVENTS_FILE, openRun, stimulusRecord } from '../src/record.ts'
 import type { RunMeta, TrialRecord } from '../src/record.ts'
 
 /**
@@ -66,6 +66,8 @@ function recordFor(runId: string, harness: Awaited<ReturnType<typeof captured>>)
     structured: undefined,
     trace: null,
     modelInput: null,
+    host: null,
+    hostUnavailableReason: 'nothing read the host in this fixture',
     observationsUnavailableReason: 'the collector was not armed for this session',
   }
 }
@@ -99,6 +101,20 @@ describe('a run directory', () => {
     await openRun(root, meta('run-c', harness), harness.captured)
     // Appending silently would produce one file that still parses, holding two experiments.
     await expect(openRun(root, meta('run-c', harness), harness.captured)).rejects.toThrow()
+  })
+
+  it('writes the raw events tagged with their trial, and only when asked', async () => {
+    // The bottom layer has to stay joinable to the record it belongs to, and its absence must be an
+    // absent file rather than an empty one: an empty `events.jsonl` would read as "the subject did
+    // nothing", which is a claim about the run.
+    const harness = await captured()
+    const run = await openRun(root, meta('run-f', harness), harness.captured)
+    const event = { type: 'tool/call', seq: 1, time: 5, data: { callId: 'c1', name: 'read' } }
+    await run.appendEvents(1, [event as never])
+    await run.appendEvents(2, [])
+    const lines = (await readFile(join(run.directory, EVENTS_FILE), 'utf8')).trim().split('\n')
+    expect(lines).toHaveLength(1)
+    expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({ trial: 1, seq: 1, type: 'tool/call' })
   })
 
   it('can be removed, so a failed run leaves nothing that looks like data', async () => {

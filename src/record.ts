@@ -17,10 +17,12 @@
 
 import { appendFile, mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TaskAttachment } from './attachments.ts'
 import type { Fault } from './fault.ts'
 import type { ObservedModelInput, TraceFeatures } from './fold.ts'
 import type { CapturedHarness, ResolvedHarness } from './harness.ts'
+import type { HostSnapshot } from './host.ts'
 import type { CapabilitySurface } from './subject.ts'
 
 /** Why a trial's run ended, as the subagent runtime reports it. */
@@ -94,6 +96,15 @@ export interface TrialRecord {
   readonly trace: TraceFeatures | null
   /** What the subject was given. `null` under the same condition as {@link TrialRecord.trace}. */
   readonly modelInput: ObservedModelInput | null
+  /**
+   * The host's own projection values, verbatim, at {@link HostSnapshot.asOfSeq}.
+   *
+   * Not a re-derivation: whatever the host registered among the exported keys is written as it came
+   * back. `null` means the values could not be read — never that the host computed nothing.
+   */
+  readonly host: HostSnapshot | null
+  /** Why {@link TrialRecord.host} is `null`, so a missing read is not mistaken for an empty one. */
+  readonly hostUnavailableReason: string | null
   /** Set when the observations could not be read, so a missing fold is never mistaken for an empty one. */
   readonly observationsUnavailableReason: string | null
 }
@@ -124,6 +135,16 @@ export interface RunHandle {
   readonly recordPath: string
   /** Append one trial. Resolves after the line is flushed. */
   append(record: TrialRecord): Promise<void>
+  /**
+   * Append one trial's raw committed events, tagged with that trial's index.
+   *
+   * Lazy on purpose: the file is created by the first call, so a run that kept no events has no empty
+   * `events.jsonl` sitting there claiming the subject did nothing.
+   * @param trial - 1-based trial index the events belong to.
+   * @param events - committed events in `seq` order.
+   * @returns resolves after the lines are flushed.
+   */
+  appendEvents(trial: number, events: readonly SessionEvent[]): Promise<void>
   /**
    * Record the capability surface the harness turned out to have.
    *
@@ -163,25 +184,36 @@ const README = `This directory is one benchmark run.
                   capability surface the harness actually mounted with.
   harness.*       a verbatim copy of the harness under test. Re-running this run is
                   passing this file as harness.file.
-  trials.jsonl    one JSON line per trial: stimulus, outcome, and two folded views.
+  trials.jsonl    one JSON line per trial: stimulus, the outcome, what the host
+                  computed, what we folded, and the answer.
+  events.jsonl    the subject's committed Session events, verbatim: the bottom layer.
+                  Written unless the caller turns it off.
 
 How to read it
   1. Compare runs by stimulus.fingerprint, never by file names. Two runs with the
      same fingerprint applied the same harness on the same route; two with different
      fingerprints did not, whatever their file names say.
-  2. trace says what the subject DID.  modelInput says what it WAS GIVEN.
-  3. Both are facts, not scores. This plugin computes no statistics: group and average
-     them outside, with whatever method your study needs.
+  2. host says what the HOST computed (timing, tokens, context pressure, policy,
+     compaction-adjacent counters) and is copied from its projections unchanged.
+     modelInput says what the subject WAS GIVEN.  trace says what it DID, and holds
+     only the three numbers no host projection gives.
+  3. Nothing here is a score, and no statistics are computed: group and average
+     outside, with whatever method your study needs. events.jsonl is what makes that
+     possible — a record can be re-folded under a definition this plugin never had.
   4. Task attachments (run.json, task.attachments) are identified, not copied: the
      bytes live in the host attachment store under that id. An image only reached the
      subject if its route declared image input; a file always arrives as a handle
      line naming a read-only path, never as contents.
 
 A harness file is copied verbatim into this directory, so never put credentials in one.
+events.jsonl holds prompts and model output as the subject saw them; redact before sharing.
 `
 
 /** Name of the record file inside a run directory. Fixed, so tooling can find it. */
 export const RECORD_FILE = 'trials.jsonl'
+
+/** Name of the raw-event file inside a run directory. Fixed, so tooling can find it. */
+export const EVENTS_FILE = 'events.jsonl'
 
 /**
  * Where one run's directory is.
@@ -247,6 +279,11 @@ export async function openRun(
     recordPath,
     async append(record: TrialRecord): Promise<void> {
       await appendFile(recordPath, `${JSON.stringify(record)}\n`, 'utf8')
+    },
+    async appendEvents(trial: number, events: readonly SessionEvent[]): Promise<void> {
+      if (events.length === 0) return
+      const lines = events.map((event) => `${JSON.stringify({ trial, ...event })}\n`).join('')
+      await appendFile(join(directory, EVENTS_FILE), lines, 'utf8')
     },
     async annotate(surface: CapabilitySurface): Promise<void> {
       const written = { ...meta, surface, recordSchema: RECORD_SCHEMA }

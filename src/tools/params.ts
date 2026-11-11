@@ -119,6 +119,20 @@ export const ATTACHMENTS_PARAMETER = {
   },
 } as const satisfies ParameterSchemaSpec
 
+/** The raw-event parameter: on by default, because the raw layer is the product. */
+export const RECORD_EVENTS_PARAMETER = {
+  record_events: {
+    type: 'boolean',
+    description:
+      "Write the subject's committed Session events verbatim to events.jsonl. Defaults to true, and " +
+      'leaving it on is the recommendation: those events are what lets a record be re-folded under a ' +
+      'definition this plugin never had, and they carry the tool arguments, tool results, injected ' +
+      'context and per-step timestamps that no aggregate preserves. Set false only to save space — it ' +
+      'also means anything not in the record is gone. The file holds prompts and model output as the ' +
+      'subject saw them.',
+  },
+} as const satisfies ParameterSchemaSpec
+
 /** The faults parameter, shared so the tools describe the three modes identically. */
 export const FAULTS_PARAMETER = {
   faults: {

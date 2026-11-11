@@ -28,6 +28,7 @@ import { normalizeFaults } from '../fault.ts'
 import type { FaultGate } from '../gate.ts'
 import type { ResolveDeps, ResolvedHarness } from '../harness.ts'
 import { resolveHarness } from '../harness.ts'
+import { readHost } from '../host.ts'
 import { jobOutcomeOf } from '../jobs.ts'
 import type { JobRegistry } from '../jobs.ts'
 import { runDirectoryFor } from '../record.ts'
@@ -36,6 +37,7 @@ import type { RunDeps, RunRequest, TrialSummary } from '../run.ts'
 import {
   ATTACHMENTS_PARAMETER,
   FAULTS_PARAMETER,
+  RECORD_EVENTS_PARAMETER,
   REQUIRED_HARNESS,
   ROUTE_PARAMETERS,
   faultsOf,
@@ -172,6 +174,7 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
         ...REQUIRED_HARNESS,
         ...ROUTE_PARAMETERS,
         ...FAULTS_PARAMETER,
+        ...RECORD_EVENTS_PARAMETER,
       },
       output: {
         schema: OUTPUT_SCHEMA,
@@ -239,12 +242,15 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
           outputSchema: (args.output_schema as ObjectJsonSchema | undefined) ?? null,
           timeoutMs: args.timeout_ms ?? deps.limits.trialTimeoutMs,
           trials,
+          recordEvents: args.record_events ?? true,
         }
         const depsForRun = {
           presets: deps.presets,
           subagents: deps.subagents,
           gate: deps.gate,
           collector: deps.collector,
+          // Bound here because the tool layer is the only place that may know a host service's shape.
+          readHost: (session: unknown) => readHost(ctx, session),
           outputRoot: deps.limits.outputRoot,
         }
 

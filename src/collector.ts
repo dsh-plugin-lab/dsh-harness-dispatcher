@@ -9,8 +9,25 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { emptyFold, finishFold, foldEvent } from './fold.ts'
 import type { FoldState, TrialObservations } from './fold.ts'
+
+/** One subject's accumulator: the fold, the raw log when asked for, and the Session it belongs to. */
+interface Armed {
+  readonly state: FoldState
+  readonly events: SessionEvent[] | null
+  /**
+   * The Session object itself, captured from the first committed event.
+   *
+   * Kept because the host's projections can only be read against a Session, and by the time a trial can
+   * read anything the activation has already settled — `ctx.sessions.get(id)` answers `undefined` then.
+   * The callback hands it over on every event, so this is the one reference that outlives the store
+   * lookup.
+   */
+  session: unknown
+}
+
 /**
  * Collects folds for the Sessions under test.
  *
@@ -18,7 +35,7 @@ import type { FoldState, TrialObservations } from './fold.ts'
  * one lookup per committed event — it must never change behaviour for anyone else's session.
  */
 export class FoldCollector {
-  private readonly folds = new Map<string, FoldState>()
+  private readonly armed = new Map<string, Armed>()
 
   /**
    * Subscribe to the committed-event feed.
@@ -26,24 +43,33 @@ export class FoldCollector {
    */
   attach(ctx: Context): void {
     ctx.on('session/event', (session, event) => {
-      const fold = this.folds.get(String(session.id))
-      if (fold === undefined) return
-      foldEvent(fold, event)
+      const entry = this.armed.get(String(session.id))
+      if (entry === undefined) return
+      entry.session = session
+      foldEvent(entry.state, event)
+      entry.events?.push(event)
     })
   }
 
   /**
    * Begin folding one subject Session.
    * @param sessionId - the subject's Session id.
+   * @param recordEvents - also keep every committed event verbatim, for the caller that wants the
+   *   bottom layer rather than this repository's reading of it. Off by default: it is the only thing
+   *   here that stores message contents.
    * @returns the disposer that stops folding and releases the accumulator. Reading afterwards yields
    *   `undefined`, so a leaked read cannot silently return another trial's numbers.
    */
-  arm(sessionId: string): () => void {
-    const state = emptyFold()
-    this.folds.set(sessionId, state)
+  arm(sessionId: string, recordEvents = false): () => void {
+    const entry: Armed = {
+      state: emptyFold(),
+      events: recordEvents ? [] : null,
+      session: undefined,
+    }
+    this.armed.set(sessionId, entry)
     return () => {
       // Only remove this arm: two overlapping trials must not release each other's accumulator.
-      if (this.folds.get(sessionId) === state) this.folds.delete(sessionId)
+      if (this.armed.get(sessionId) === entry) this.armed.delete(sessionId)
     }
   }
 
@@ -53,12 +79,30 @@ export class FoldCollector {
    * @returns both views, or `undefined` when the subject is not armed.
    */
   read(sessionId: string): TrialObservations | undefined {
-    const fold = this.folds.get(sessionId)
-    return fold === undefined ? undefined : finishFold(fold)
+    const entry = this.armed.get(sessionId)
+    return entry === undefined ? undefined : finishFold(entry.state)
+  }
+
+  /**
+   * The raw committed events for one subject, in `seq` order.
+   * @param sessionId - the subject's Session id.
+   * @returns the events, or `undefined` when the subject is not armed or was armed without recording.
+   */
+  takeEvents(sessionId: string): readonly SessionEvent[] | undefined {
+    return this.armed.get(sessionId)?.events ?? undefined
+  }
+
+  /**
+   * The Session object this subject's events arrived on.
+   * @param sessionId - the subject's Session id.
+   * @returns the Session, or `undefined` when the subject is not armed or never emitted an event.
+   */
+  sessionOf(sessionId: string): unknown {
+    return this.armed.get(sessionId)?.session
   }
 
   /** How many subjects are currently armed. Reported so a leaked arm is visible rather than assumed away. */
   get size(): number {
-    return this.folds.size
+    return this.armed.size
   }
 }

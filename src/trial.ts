@@ -23,6 +23,7 @@ import { onceAborted } from './abort.ts'
 import type { FoldCollector } from './collector.ts'
 import type { Fault } from './fault.ts'
 import type { FaultGate } from './gate.ts'
+import type { HostRead } from './host.ts'
 import type { RunHandle, StimulusRecord, TrialRecord, TrialStopReason } from './record.ts'
 import { contentBlocksOf } from './text.ts'
 
@@ -39,6 +40,8 @@ export interface TrialPlan {
   readonly maxDepth: number
   readonly route: { readonly provider: string; readonly model: string } | null
   readonly faults: readonly Fault[]
+  /** Keep the subject's committed events verbatim in the run directory. Defaults to on. */
+  readonly recordEvents: boolean
 }
 
 /** What one trial produced, for the tool's return value. */
@@ -58,6 +61,13 @@ export interface TrialDeps {
   readonly subagents: SubagentRuntime
   readonly gate: FaultGate
   readonly collector: FoldCollector
+  /**
+   * Read the host's own projection values for the subject's Session.
+   *
+   * Supplied by the tool layer, which is the only place allowed to know a host service's shape. A trial
+   * that cannot read them records why; it never invents zeros.
+   */
+  readonly readHost: (session: unknown) => HostRead
 }
 
 /**
@@ -128,7 +138,7 @@ export async function runTrial(
 
   const childId = String(activation.childId)
   const disarmGate = deps.gate.arm(childId, plan.faults)
-  const disarmFold = deps.collector.arm(childId)
+  const disarmFold = deps.collector.arm(childId, plan.recordEvents)
   // `startActivation`'s signal covers admission only: once the activation is accepted the child runs
   // on its own, so a budget that only aborts the signal leaves the subject working and the record
   // claiming a stop that never happened. Stopping is ours to do, and `dispose()` is what stops a
@@ -141,6 +151,10 @@ export async function runTrial(
     const endedAt = Date.now()
     // Read, then release: the accumulator must not outlive the trial that owns it.
     const observations = deps.collector.read(childId)
+    const events = deps.collector.takeEvents(childId) ?? []
+    // The Session object, not its id: `result` has already settled by now, so the session store no
+    // longer answers for this child. Measured — an id-based read returned `host: null` on every trial.
+    const host = deps.readHost(deps.collector.sessionOf(childId))
     disarmFold()
     const timedOut = stoppedByBudget(budget, signal, result.stopReason)
 
@@ -160,10 +174,13 @@ export async function runTrial(
       structured: result.structured,
       trace: observations?.trace ?? null,
       modelInput: observations?.modelInput ?? null,
+      host: host.ok ? { asOfSeq: host.asOfSeq, values: host.values } : null,
+      hostUnavailableReason: host.ok ? null : host.reason,
       observationsUnavailableReason:
         observations === undefined ? 'the collector was not armed for this session' : null,
     }
     await run.append(record)
+    await run.appendEvents(index, events)
     return {
       index,
       childId,
