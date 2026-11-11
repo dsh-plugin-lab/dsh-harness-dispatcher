@@ -105,7 +105,7 @@ export function apply(ctx: Context, config: PluginConfig): void {
         'To compare harnesses, hold the task fixed and call `harness_run` once per harness with the ' +
         'same `task_id` and `prompt` — the only variable is the harness argument. Both `harness_inspect` ' +
         'and `harness_export` are free (no agent, no tokens): inspect before running, and export a ' +
-        'shipped preset to start from a harness that already mounts. Load the `dsh-harness-bench` ' +
+        'shipped preset to start from a harness that already mounts. Load the `dsh-harness-dispatcher` ' +
         'skill for the loop and the two tool-name namespaces.'
       )
     },

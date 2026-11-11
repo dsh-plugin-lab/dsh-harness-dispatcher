@@ -5,8 +5,9 @@
 这个目录里的 `.md` **不是文档**，是运行时载荷 —— 它在 `apply()` 时被
 [../src/skill.ts](../src/skill.ts) 读走交给宿主技能注册表。所以：
 
-- **目录名就是技能名**，且必须 kebab-case（`dsh-harness-bench`）。宿主按目录名找正文，改名等于换技能；
-  而 frontmatter 里的 `name` 必须**与目录名同一串**，[../src/skill.ts](../src/skill.ts) 会拒掉不一致的。
+- **目录名就是技能名**，且必须 kebab-case（`dsh-harness-dispatcher`），并且**与插件包名同一串** ——
+  一份装配里只有一个同名技能条目，重名就是"我以为装的是这个"的开始；而 frontmatter 里的 `name`
+  必须**与目录名同一串**，[../src/skill.ts](../src/skill.ts) 会拒掉不一致的。
 - **frontmatter 不是装饰，是文件合法的一部分**：`name`、`description` 必填，`author` /
   `metadata.source` 跟着兄弟仓的约定补齐。少了它们，代码注册照样能跑（它自己剥），但文件就不再是
   合法 skill 文件 —— `dsh-skill-filesystem` 会因为缺 frontmatter 直接**忽略**它并只记一条 warn。

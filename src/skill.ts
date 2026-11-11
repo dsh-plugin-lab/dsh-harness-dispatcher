@@ -9,7 +9,7 @@
  * preset mounts a skill provider pointed at it — a preset that does not (such as `standard`) sees none of
  * them, and a pointer without a fallback fails silently. So the registration is code.
  *
- * The file is [skills/dsh-harness-bench/SKILL.md](../skills/dsh-harness-bench/SKILL.md), and it carries
+ * The file is [skills/dsh-harness-dispatcher/SKILL.md](../skills/dsh-harness-dispatcher/SKILL.md), and it carries
  * its own YAML frontmatter: `name` and `description` have one home, in the file, and the file stays a
  * **valid skill file** — mountable by `dsh-skill-filesystem` if someone ever points a provider at this
  * directory. A body-only fragment would look identical and be dropped by that provider, which is exactly
@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 
 /** The skill's name. Also the directory name, and what its frontmatter must say. */
-export const SKILL_NAME = 'dsh-harness-bench'
+export const SKILL_NAME = 'dsh-harness-dispatcher'
 
 /** File name inside the skill directory. */
 const SKILL_FILE = 'SKILL.md'

@@ -30,8 +30,8 @@ one.
 - **Two folds** — what the subject *did* (`trace`: turns, steps, tool calls, per-tool errors, token
   accounting, final text) and what it *was given* (`modelInput`: system-prompt digest, tool names and
   schema digest, actual route). Pure facts; no judgement.
-- **A skill registered by the plugin** (`dsh-harness-bench`) carrying that loop and the traps that each
-  cost an experiment, so an agent finds them without reading source.
+- **A skill registered by the plugin** (`dsh-harness-dispatcher`, same name as the package) carrying that
+  loop and the traps that each cost an experiment, so an agent finds them without reading source.
 
 Records land in one **self-sufficient** directory per run — the harness it ran is copied in, so nobody
 has to hunt for the original file:

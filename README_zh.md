@@ -24,7 +24,8 @@ Model + Harness = Agent
 - **两条折叠**：受试体**做了什么**（`trace`：turn/step/工具调用数、按工具名的错误、token 记账、最终文本），
   以及受试体**被给了什么**（`modelInput`：system prompt 摘要、工具名与 schema 摘要、实际路由）。
   全是事实，没有判断。
-- **一个随包注册的 skill**（`dsh-harness-bench`）：把这条回路和两个命名空间陷阱写在里面，agent 自己会找到。
+- **一个随包注册的 skill**（`dsh-harness-dispatcher`，与包同名）：把这条回路和两个命名空间陷阱写在里面，
+  agent 自己会找到。
 
 一次 run 一个目录，**自足**：harness 的逐字副本就在里面，不用回头找原文件。
 

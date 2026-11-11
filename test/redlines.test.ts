@@ -492,7 +492,19 @@ describe('B12 — the tools teach their own use', () => {
     // A filesystem skill is invisible in any preset whose skill provider does not point at it — a dead
     // pointer that fails silently. The registration is code so it does not depend on a profile edit.
     expect(sources().get('src/skill.ts')).toContain('skills.register(')
-    expect(SKILL_NAME).toBe('dsh-harness-bench')
+    expect(SKILL_NAME).toBe('dsh-harness-dispatcher')
+  })
+
+  it('uses the package name, so the skill is findable under the thing that installed it', () => {
+    // Three artifacts carry this one string: the directory, the frontmatter, and the package name. The
+    // first two are checked against each other by `readSkill()`; the third had no check, so renaming the
+    // package left the skill answering to a name nothing else used. A user told "install
+    // dsh-harness-dispatcher, then load that skill" should not have to be told two names.
+    const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+      name?: string
+    }
+    expect(SKILL_NAME).toBe(manifest.name)
+    expect(readdirSync(join(ROOT, 'skills'))).toContain(SKILL_NAME)
   })
 
   it('treats the skill registry as optional', () => {
@@ -798,8 +810,8 @@ describe('B24 — a registered skill is loadable, not merely listed', () => {
    * The rule: the registration must satisfy the contract the *loading* path validates, not only the one
    * `register()` validates.
    *
-   * Measured 2026-11-11 on host `0.2.2-rc.1`: `dsh-harness-bench` appeared in the catalogue and calling
-   * the `skill` tool on it failed with `loaded skill "dsh-harness-bench" source must be a string`. The
+   * Measured 2026-11-11 on host `0.2.2-rc.1`: the skill appeared in the catalogue and calling the
+   * `skill` tool on it failed with `loaded skill "…" source must be a string`. The
    * registry validates twice — `register()` leniently, `get()` (the path the `skill` tool takes) against
    * the full definition, which requires `source` and `provider` to be strings. `register()` defaults
    * `provider` but not `source`, so a registration without one lists fine and cannot be loaded: the skill
@@ -1189,10 +1201,10 @@ describe('B22 — the skill is one page, and it says everything once', () => {
       ],
       [
         'block-scalar.md',
-        '---\nname: dsh-harness-bench\ndescription: >-\n---\n\nbody\n',
+        '---\nname: dsh-harness-dispatcher\ndescription: >-\n---\n\nbody\n',
         /single-line/,
       ],
-      ['no-body.md', '---\nname: dsh-harness-bench\ndescription: x\n---\n\n', /no body/],
+      ['no-body.md', '---\nname: dsh-harness-dispatcher\ndescription: x\n---\n\n', /no body/],
     ]
     try {
       for (const [file, text, expected] of cases) {

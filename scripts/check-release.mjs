@@ -71,7 +71,7 @@ require_(
 // failure is a warning in a log nobody reads, which is why it is asserted here.
 require_(
   'files includes skills/',
-  Array.isArray(pkg.files) && published('skills/dsh-harness-bench/SKILL.md', pkg.files),
+  Array.isArray(pkg.files) && published('skills/dsh-harness-dispatcher/SKILL.md', pkg.files),
   'the usage skill is read from skills/<name>/SKILL.md at apply time; not shipping it means the skill silently vanishes from the catalogue.',
 )
 require_(

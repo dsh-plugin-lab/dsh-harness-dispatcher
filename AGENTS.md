@@ -149,7 +149,7 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 | 你在改的东西 | 同批必须改 |
 |---|---|
 | 工具的名字 / 数量 / 参数 schema | [src/tools/](src/tools/) 的注册处 → [能力面](docs/ARCHITECTURE.md#5-能力面) → 红线 B11/B14 |
-| 新手能不能上手 | `harness_inspect` 不带参数的列表分支 → 红线 **B21** → [skills/dsh-harness-bench/SKILL.md](skills/dsh-harness-bench/SKILL.md) → 红线 **B22** |
+| 新手能不能上手 | `harness_inspect` 不带参数的列表分支 → 红线 **B21** → [skills/dsh-harness-dispatcher/SKILL.md](skills/dsh-harness-dispatcher/SKILL.md) → 红线 **B22** |
 | skill 正文 | [skills/](skills/AGENTS.md)：它是**运行时载荷**，不是文档；`check:release` 断言它随包发布 |
 | 给某个东西改名 | 红线 **B13/B14** 兜住源码旧词与文档旧工具名 |
 | 依赖范围 | `engines.dsh` / `peerDependencies` / devDependencies **三处同批**，逐字相同 |
