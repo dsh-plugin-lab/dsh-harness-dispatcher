@@ -945,3 +945,40 @@ describe('B20 — a tool a harness defines is a tool, with a tool’s obligation
     expect(code).toContain('defineTool(')
   })
 })
+
+describe('B23 — a trial stopped by its own budget is stopped, not just labelled', () => {
+  /**
+   * The rule: `timedOut` must describe something that happened.
+   *
+   * Measured 2026-11-11 against host `0.2.2-rc.1`, `timeout_ms: 700` on a task that runs long: the
+   * record said `timedOut: true` beside `stopReason: "completed"` and `wallMs: 15504`, because
+   * `startActivation({ signal })` covers admission only — once the activation is accepted the child is
+   * not wired to that signal at all. The trial ran to the end while claiming to have been cut short,
+   * and `timedOut` is exactly the field a reader filters on to exclude interrupted trials.
+   *
+   * So two things must hold: the child is cancelled through the one API that stops a running child,
+   * and `timedOut` is derived from what the result says rather than from the timer alone.
+   */
+  it('cancels the running child when the trial signal aborts', () => {
+    const code = stripComments(sources().get('src/trial.ts') ?? '')
+    // A listener on the fused signal is the only place the budget can reach the child.
+    expect(code).toMatch(/onceAborted\(trialSignal,/)
+    expect(code).toMatch(/activation\.dispose\(\)/)
+    // The listener must not outlive the trial: one budget per trial, one listener per budget.
+    expect(code).toMatch(/detachStop\(\)/)
+  })
+
+  it('reports `timedOut` only for a trial the budget actually ended', () => {
+    // `budget.aborted` alone was true in the measured failure. The stop reason is what makes it a fact.
+    const code = stripComments(sources().get('src/trial.ts') ?? '')
+    expect(code).toMatch(/const timedOut =[\s\S]{0,200}stopReason === 'aborted'/)
+  })
+
+  it('counts recorded trials and completed trials separately in what it returns', () => {
+    // The measured run printed "0/1 trials recorded" while one line was on disk: the numerator was
+    // `completed`, so a stopped trial read as a lost one.
+    const code = sources().get('src/tools/harness-run.ts') ?? ''
+    expect(code).toMatch(/trial\(s\) recorded/)
+    expect(code).toMatch(/\$\{String\(value\.recorded\)\}/)
+  })
+})

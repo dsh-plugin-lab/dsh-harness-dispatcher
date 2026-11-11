@@ -8,6 +8,9 @@
  * A subject that errors, refuses, hits its token ceiling or is aborted produces **a record**, not an
  * exception. Only a fault in this plugin throws (AGENTS.md discipline 4).
  *
+ * Stopping a running subject is this module's job, not the signal's: see the note on {@link runTrial}'s
+ * abort wiring.
+ *
  * @module dsh-harness-dispatcher/trial
  */
 
@@ -15,6 +18,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
+import { onceAborted } from './abort.ts'
 import type { FoldCollector } from './collector.ts'
 import type { Fault } from './fault.ts'
 import type { FaultGate } from './gate.ts'
@@ -101,13 +105,25 @@ export async function runTrial(
   const childId = String(activation.childId)
   const disarmGate = deps.gate.arm(childId, plan.faults)
   const disarmFold = deps.collector.arm(childId)
+  // `startActivation`'s signal covers admission only: once the activation is accepted the child runs
+  // on its own, so a budget that only aborts the signal leaves the subject working and the record
+  // claiming a stop that never happened. Stopping is ours to do, and `dispose()` is what stops a
+  // running child: it cancels the turn, waits for idle, then settles `result` as `aborted`.
+  const detachStop = onceAborted(trialSignal, () => {
+    void activation.dispose().catch(() => undefined)
+  })
   try {
     const result = await activation.result
     const endedAt = Date.now()
     // Read, then release: the accumulator must not outlive the trial that owns it.
     const observations = deps.collector.read(childId)
     disarmFold()
-    const timedOut = budget !== undefined && budget.aborted && !signal.aborted
+    // Only a trial the budget actually ended counts as timed out. A child that finishes in the window
+    // between the budget firing and the cancellation landing ran to completion, and calling that
+    // "cut short" would put `timedOut: true` beside `stopReason: "completed"` — two facts that cannot
+    // both be true, in the one record a reader filters on to exclude interrupted trials.
+    const timedOut =
+      budget !== undefined && budget.aborted && !signal.aborted && result.stopReason === 'aborted'
 
     const record: TrialRecord = {
       runId: plan.runId,
@@ -140,6 +156,8 @@ export async function runTrial(
       timedOut,
     }
   } finally {
+    // The caller's signal outlives this trial, so the listener must not.
+    detachStop()
     disarmGate()
     disarmFold()
     // Dispose inside the trial's own finally: a throwing `result` must not leak the activation.

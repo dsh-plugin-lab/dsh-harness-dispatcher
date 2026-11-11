@@ -146,8 +146,8 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
         timeout_ms: {
           type: 'number',
           description:
-            'Per-trial wall-time budget. When it fires the trial is recorded with `timedOut: true` ' +
-            'and `stopReason: "aborted"` — an observation, not an error.',
+            'Per-trial wall-time budget. When it fires the subject is stopped and the trial is ' +
+            'recorded with `timedOut: true` and `stopReason: "aborted"` — an observation, not an error.',
         },
         ...REQUIRED_HARNESS,
         ...ROUTE_PARAMETERS,
@@ -159,7 +159,8 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
           {
             type: 'text',
             text:
-              `${String(value.completed)}/${String(value.trials)} trials recorded → ${value.recordPath}` +
+              `${String(value.recorded)}/${String(value.trials)} trial(s) recorded, ` +
+              `${String(value.completed)} completed → ${value.recordPath}` +
               `\nharness ${value.fingerprint} captured at ${value.harnessPath}`,
           },
         ],
