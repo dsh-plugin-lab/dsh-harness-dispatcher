@@ -14,38 +14,25 @@ A **harness** is what a child agent runs with: its prompt and tool rows, plus th
 requests use. This bench runs one fixed task against one harness and records what happened. It scores
 nothing — the records are the deliverable, and analysis happens outside.
 
+Parameter shapes live in each tool's own schema; this page carries only what no single tool's
+description can hold: the loop, the traps, and what the record means.
+
 ## The loop
 
-0. **Ask what exists.** `harness_inspect` with **no arguments** lists this host's presets and marks the
+1. **Ask what exists.** `harness_inspect` with **no arguments** lists this host's presets and marks the
    default. It is the entry point when you do not already know a preset id.
-1. **Look before you leap.** Given a target, `harness_inspect` mounts, audits and reports what the
-   subject could actually call — no agent, no tokens. Three ways to name one:
-   `{ preset: "standard" }` for a preset the host has, `{ harness: { tools: ["fs"] } }` for a small
-   ablation, `{ harness: { file: "minus-web" } }` for a file you wrote. `ok` means it can serve as a
-   subject; `problems` names rows that mounted but contribute nothing, unreachable faults, an
-   unusable route.
-2. **Start from something that runs.** `harness_export { preset: "standard", name: "minus-web" }`
-   writes a working row list. Edit it with your file tools: delete rows, change `config`, add
-   `disabled`, group rows with `isolate`. It is a Loader entry list, parsed by the host itself.
-3. **Run it.** `harness_run { task_id, prompt, trials, harness: { file: "minus-web" } }`. Add
-   `run_in_background: true` when the trials would keep you waiting for minutes: it returns a job id,
-   `job_output` shows per-trial progress, the completion notice brings the totals, and `job_kill` stops
-   it while keeping what was already recorded.
-4. **Change one thing.** Keep `task_id` and `prompt` byte-identical between harnesses — that is the
+2. **Look before you leap.** Given a target, `harness_inspect` mounts, audits and reports what the
+   subject could actually call — no agent, no tokens. It takes a preset, a small ablation, or a file you
+   wrote. `ok` means it can serve as a subject; `problems` names rows that mounted but contribute
+   nothing, unreachable faults, an unusable route.
+3. **Start from something that runs.** `harness_export` writes a working row list. Edit it with your
+   file tools: delete rows, change `config`, add `disabled`, group rows with `isolate`. It is a Loader
+   entry list, parsed by the host itself.
+4. **Run it.** `harness_run` takes the task, the harness and a trial count. Add `run_in_background: true`
+   when the trials would keep you waiting for minutes: it returns a job id, `job_output` shows
+   per-trial progress, and `job_kill` stops it while keeping what was already recorded.
+5. **Change one thing.** Keep `task_id` and `prompt` byte-identical between harnesses — that is the
    whole experiment.
-
-## Giving the task a picture or a file
-
-`attachments: [{ path }]` is a sibling of `prompt`, sent in order after the text. The extension decides
-what it is, and the two are different experiments:
-
-- **An image is something the subject SEES** — but only if the model route declares `image` input. The
-  host otherwise swaps it for a placeholder line **without failing**, so this bench refuses to start
-  instead of running trials that never saw it. An attached image therefore also pins the route.
-- **A file is a pointer the subject must follow.** The host never sends file bytes: it sends one line
-  naming the file, its size and a read-only path. A harness with no file tool scores zero here, and
-  that is a finding, not a defect. That path sits outside the subject's working directory, so a sealed
-  harness may be refused by its own sandbox when it tries to read it.
 
 ## Shaping the subject
 
@@ -56,19 +43,22 @@ what it is, and the two are different experiments:
   sealing removes the host's, so a sealed harness has no skill channel at all. A harness that mounts
   `tool-skill` itself keeps that row, and the inherited catalogue then reaches the subject — no API
   stops that.
-- **A tool can be defined in the file.** A row named `dsh-harness-dispatcher/tool` with config
-  `{ name, description, parameters?, result }` stands one up. Reusing a name the host already has
-  **replaces** it, which is how a shipped tool's description or parameters become a variable; a name
-  another row *in this harness* uses instead fails the mount. The tool always succeeds — failure and
-  latency belong to `faults`.
-- **Persona** is `harness.persona` (`none`, `terse`, `verbose`, `pair-programmer`, or `custom` with
-  `persona_text`), and it compiles to a row, so it is inside the fingerprint like everything else. It
-  **replaces** the deployment persona rather than adding to it: judge it by
+- **A tool can be defined in the file.** A row named `dsh-harness-dispatcher/tool` stands one up.
+  Reusing a name the host already has **replaces** it, which is how a shipped tool's description or
+  parameters become a variable; a name another row *in this harness* uses instead fails the mount. The
+  tool always succeeds — failure and latency belong to `faults`.
+- **Persona replaces, it does not extend.** It compiles to a row, so it is inside the fingerprint like
+  everything else, and the deployment persona is gone rather than added to. Judge it by
   `modelInput.systemPrompt.digest`, not by how much longer the prompt got.
 
 ## Traps that each cost an experiment
 
-- **Two namespaces.** `harness.tools` takes CATALOGUE KEYS (`fs`, `pwsh`); `faults[].tool` takes
+- **An attachment changes the experiment, not just the prompt.** An `attachments` image is something the
+  subject SEES only if the model route declares `image` input — the host otherwise swaps it for a
+  placeholder line **without failing**, so this bench refuses to start rather than run trials that never
+  saw it, and the route becomes pinned. A file is a pointer the subject must follow, since the host
+  never sends its bytes: a harness with no file tool scores zero there, which is a finding, not a defect.
+- **Two namespaces.** `harness.tools` takes CATALOGUE KEYS (`fs`, `pwsh`). `faults[].tool` takes
   MODEL-FACING TOOL NAMES (`read`, `grep`). A fault naming a catalogue key never fires — and a fault
   that never fires still leaves a clean-looking record.
 - **Faults are not part of the harness.** They sit beside it, on the tool pipelines, so one harness file
@@ -86,23 +76,20 @@ what it is, and the two are different experiments:
   `aborted` (`timedOut: false`), and no further trial starts. What you get back is the host's
   `Error: tool call aborted`, not a summary — read the run directory for what landed. To drop ONE trial
   and keep the run going, interrupt that child from its own session instead: the run continues and the
-  trial lands as `aborted` with `interrupted: true`. `job_kill` behaves like stopping: it cancels the
-  trial in flight and keeps what was recorded.
+  trial lands as `aborted` with `interrupted: true`.
 
 ## What the records say
 
-- `host` — what the HOST computed, copied back unchanged: `sessionStats` (turns, steps, llmMs, toolMs,
-  ttftMs, decodeMs, decodeTokens), `tokenUsage`, `contextPressure` against `contextWindow`,
-  `contextBreakdown`, `permissions`, `modelSelection`, `subagentCatalog`, `subagentTiming`,
-  `turnOutline`. Compare timings here rather than computing your own — a second set of totals means a
-  second set of definitions.
+- `host` — what the HOST computed, copied back unchanged: timing and counts, the four disjoint token
+  buckets, context pressure against the window, the policy the subject ran under, and the harness
+  behaviours (delegation, planning, todos). **Compare timings here** rather than computing your own — a
+  second set of totals means a second set of definitions.
 - `modelInput` — what the subject WAS GIVEN: the system prompt (digest and length), the assembled tool
   schemas, the route actually used. This is why "the same harness" is checkable rather than trusted.
-- `trace` — the three counts no projection offers: tool calls, tool errors, per-tool split.
-- `events.jsonl` — the subject's committed events, verbatim. On by default; `record_events: false`
-  turns it off. It is where tool arguments, tool results, injected context, per-step timing, retries
-  and compaction live, and it is what lets you re-fold a run under a definition this bench never had.
-  It dominates the directory: 47.7 KB for one trivial trial, 35.4 KB of it the tool schemas.
+- `trace` — the three counts no projection offers: tool calls, tool errors, and the per-tool split.
+- `events.jsonl` — the subject's committed events, verbatim, on by default. It is where tool arguments,
+  tool results, injected context, per-step timing, retries and compaction live, and it is what lets you
+  re-fold a run under a definition this bench never had. It also dominates the directory's size.
 - `surface` (in `run.json`) — what it mounted with: each row's enablement, plus the tool and skill
   names callable in the subject's scope.
 

@@ -1,18 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Harness dispatcher">
-  <defs>
-    <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#4f7cff"/>
-      <stop offset="1" stop-color="#8b5cf6"/>
-    </linearGradient>
-  </defs>
-  <!-- A test bench: one fixed rail (the task) with interchangeable rigs (the harnesses). -->
-  <rect x="6" y="12" width="52" height="6" rx="3" fill="url(#grad)"/>
-  <rect x="6" y="46" width="52" height="6" rx="3" fill="url(#grad)" opacity=".35"/>
-  <!-- Three harnesses hanging from the rail; the middle one is the subject. -->
-  <rect x="12" y="22" width="10" height="14" rx="2.5" fill="#4f7cff" opacity=".45"/>
-  <rect x="27" y="22" width="10" height="22" rx="2.5" fill="#4f7cff"/>
-  <rect x="42" y="22" width="10" height="14" rx="2.5" fill="#4f7cff" opacity=".45"/>
-  <!-- The recorded trace: a struck baseline under the subject. -->
-  <path d="M27 40 h10" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
-  <circle cx="32" cy="52" r="2.6" fill="#8b5cf6"/>
+<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Harness dispatcher">
+  <!--
+    A magnifier over two sliders: inspect, then tune. That is the loop this plugin runs, and the
+    artwork is used as drawn.
+
+    Fitted by measurement, not by eye. The source is a 1024 canvas whose ink spans x 39..984,
+    y 0..1023, so the short axis is the width and the source's own margins are uneven. The group
+    below scales that box to 20 wide and centres it, which puts the ink at x 8..28 and
+    y 7.17..28.83: the short axis holds the 8 margin the icon conventions ask for, and the long
+    axis takes the centring leftover. The canvas itself stays transparent.
+
+    The colour is a literal amber rather than a theme-following keyword, because the host paints
+    this as an image, where a colour keyword and a theme variable both render as nothing. It is a
+    mid tone on purpose: near black vanished against a dark plugin list.
+  -->
+  <g transform="translate(7.1755 7.1746) scale(0.0211416)" fill="#ff8700">
+    <path d="M758.961 708.923a78.77 78.77 0 0 1 136.429 0h49.94a39.385 39.385 0 0 1 0 78.77h-49.94a78.77 78.77 0 0 1-136.429 0H472.714a39.385 39.385 0 1 1 0-78.77H758.96zM522.654 905.846a78.77 78.77 0 0 1 136.428 0h286.247a39.385 39.385 0 0 1 0 78.77H659.082a78.77 78.77 0 0 1-136.428 0h-49.94a39.385 39.385 0 1 1 0-78.77h49.94z m-10.556-275.692a315.077 315.077 0 1 1 0-630.154 315.077 315.077 0 0 1 0 630.154z m0-78.77a236.308 236.308 0 1 0 0-472.615 236.308 236.308 0 0 0 0 472.615z"/>
+    <path d="M118.252 984.615a39.385 39.385 0 0 1-78.769 0h-0.197c20.008-242.609 223.232-433.23 471-433.23v78.769c-204.208 0-372.144 155.45-391.876 354.461h-0.158z"/>
+  </g>
 </svg>

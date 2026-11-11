@@ -1,123 +1,135 @@
-# dsh-harness-dispatcher
+<p align="center">
+  <img src="icon.svg" alt="dsh-harness-dispatcher" width="80" height="80">
+</p>
 
-Score the **harness**, not the model.
+<h1 align="center">dsh-harness-dispatcher</h1>
 
-```text
-Model + Harness = Agent
-```
+<div align="center">
+  <p><em>Score the harness, not the model. <code>Model + Harness = Agent</code></em></p>
 
-An agent's behaviour is a property of what it is assembled with — system prompt, tool set, model route —
-at least as much as of its model. This plugin turns that into a controlled variable: it runs one fixed
-task repeatedly against one harness, folds each run's committed events into deterministic facts, and
-writes one JSONL line per trial.
+  <p>
+    <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat&logo=deepseek&logoColor=white" alt="powered by dsh"></a>
+  </p>
 
-It computes no statistics. Mean, interval, and significance belong to R or Python, outside this
-repository — because the analysis口径 changes and the records must stay recomputable under a different
+  <p>
+    <a href="https://github.com/dsh-plugin-lab/dsh-harness-dispatcher/actions/workflows/ci.yml"><img src="https://github.com/dsh-plugin-lab/dsh-harness-dispatcher/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat" alt="MIT license"></a>
+  </p>
+</div>
+
+---
+
+An agent's behaviour is a property of what it is **assembled** with — system prompt, tool set, model
+route — at least as much as of its model. This plugin makes that assembly a controlled variable: one
+fixed task, one harness at a time, one JSONL line per trial.
+
+It computes no statistics. Means, intervals and significance belong to R or Python, outside this
+repository, because the analysis口径 changes and the records must stay recomputable under a different
 one.
 
-## What you get
+## What it offers
 
-- **Three tools forming one zero-cost loop**:
-  - `harness_export` — write a preset's rows out as a runnable harness file (subtract from something
-    that already works);
-  - `harness_inspect` — mount, audit and probe it, reporting what the subject could *actually* call.
-    **No agent started, no tokens spent.** It also takes `{ preset: "standard" }` to inspect a preset the
-    host already has, with **no file to create at all**;
-  - `harness_run` — task + harness + trial count → a run handle and per-trial outcomes. The record file
-    is the deliverable.
-- **A fault gate** — inject `deny` / `fail` / `latency` into specific tools, for the subject only, with
-  no change to any other agent.
+- **Three tools forming one zero-cost loop.** `harness_inspect` mounts, audits and probes without
+  starting an agent or spending a token; `harness_export` writes a preset's rows out as a runnable file;
+  `harness_run` runs the task and leaves a self-sufficient record directory behind.
+- **A fault gate** — inject `deny` / `fail` / `latency` into named tools, for the subject only, with no
+  change to any other agent.
 - **The host's own numbers, exported** (`host`) — whatever the host registered among a fixed list of
-  projection keys: timing and counts, the four disjoint token buckets, context pressure against the
-  window, the policy the subject ran under, and the harness behaviours (delegation, planning, todos).
-  Copied back unchanged; adding a host projection is one string in the list.
-- **Two views of our own** — what the subject *was given* (`modelInput`: system-prompt digest, tool
-  names and schema digest, actual route — the evidence that two runs applied the same harness) and the
-  three counts no projection offers (`trace`: tool calls, tool errors, per-tool split).
-- **A skill registered by the plugin** (`dsh-harness-dispatcher`, same name as the package) carrying that
-  loop and the traps that each cost an experiment, so an agent finds them without reading source.
+  projection keys, copied back unchanged. Adding a host projection is one string in that list.
+- **Two views this plugin folds**: what the subject *was given* (`modelInput`, the evidence that two
+  runs applied the same harness) and the three counts no projection offers (`trace`).
+- **The subject's raw event log** (`events.jsonl`, on by default) — so a record can be re-folded under
+  a definition this plugin never had.
+- **A skill registered by the plugin** (`dsh-harness-dispatcher`, same name as the package) carrying
+  the loop and the traps that each cost an experiment, so an agent finds them without reading source.
 
-Records land in one **self-sufficient** directory per run. Two roots, and the split is deliberate:
+## Install
 
-| | Default | Why there |
+Unreleased, so install from a checkout rather than from a registry:
+
+```shell
+git clone https://github.com/dsh-plugin-lab/dsh-harness-dispatcher
+dsh plugin --profile <profile> add ./dsh-harness-dispatcher
+```
+
+The add step gives a **link**, so edits to the checkout take effect without reinstalling.
+
+## Compatibility
+
+| | |
+|---|---|
+| `engines.dsh` | `^0.2.2-rc.1` — verified against host `0.2.2-rc.1` |
+| Node | `>= 20` |
+
+The host's extension surface is read from the **running** version's `lib/**/*.d.ts`, never from a source
+checkout: the two lines differ, and a difference of one patch is enough for the same API to have a
+different shape. What was measured, including the points where the checkout would have produced
+silently broken code, is in
+[the host surface check](.agents/notes/2026-11-10-host-api-surface-0.2.2-rc.1.md).
+
+## Configuration
+
+| Field | Default | Meaning |
 |---|---|---|
-| **Records** (`outputRoot`) | `$DSH_HOME/harness-dispatcher/runs/<runId>/` | user data; one directory per run |
-| **Harness files** (`harnessDir`) | `$DSH_HOME/profiles/<name>/harness/` | it is the directory holding the profile's `cordis.patch.yml`, so it follows the **profile**, not the home: a harness file's bare row names only resolve inside a profile tree, and exporting anywhere else produces files that cannot run |
+| `outputRoot` | `$DSH_HOME/harness-dispatcher/runs` | Directory receiving one subdirectory per run |
+| `harnessDir` | `$DSH_HOME/profiles/<name>/harness` | Where a bare harness name resolves and `harness_export` writes |
+| `defaultTools` | `fs`, `fs-search`, `pwsh` | Catalogue keys the shortcut mounts when it names none |
+| `defaultMaxDepth` | `1` | Delegation budget granted to a subject |
+| `maxTrials` | `10` | Upper bound on trials per call |
+| `trialTimeoutMs` | `0` | Per-trial wall-time budget; `0` disables it |
 
-`$DSH_HOME` unset means `~/.dsh`. **There is no `<DSH_HOME>/harness-dispatcher/harness/`** — that is only
-the fallback for a context with no profile file at all.
+`$DSH_HOME` unset means `~/.dsh`. The two paths live under **different roots on purpose**: records are
+user data, while a harness file's bare row names only resolve inside a profile tree, so exporting one
+anywhere else produces a file that cannot run.
+
+## The record
 
 ```text
 <outputRoot>/<runId>/
   run.json          # run identity, task, stimulus identity, probed capability surface
   harness.<ext>     # verbatim copy of the harness under test (harness.json for the shortcut)
   trials.jsonl      # one line per trial: the stimulus, the outcome, the host's numbers, our two views
-  events.jsonl      # the subject's committed Session events, verbatim: the bottom layer
+  events.jsonl      # the subject's committed Session events, verbatim
   README.txt        # for whoever reads the data: which field to compare
 ```
 
-`events.jsonl` is on by default and `record_events: false` turns it off. It is the reason a record can
-be re-folded under a definition this plugin never had, and it holds the things no aggregate keeps: tool
-arguments, tool results, injected context, per-step timestamps, retries, compaction. It also dominates
-the directory — measured 47.7 KB for one trivial one-step trial, of which 35.4 KB is `request/header`
-carrying the tool schemas verbatim. It holds prompts and model output as the subject saw them.
+**The copy is evidence, not the thing that ran** — the source file is what gets mounted. And
+`events.jsonl` holds prompts and model output as the subject saw them; redact before sharing.
 
-**The copy in the run directory is evidence, not the thing that ran.** What gets mounted is the source
-file where it sits — so the two appear side by side, and only the source is worth editing. Runs that
-used the `tools`/`persona` shortcut have no source file at all; their `harness.json` is the compiled
-row list and *is* everything.
+## Development
 
-## Design notes worth knowing before you use it
+```shell
+pnpm install
+pnpm run check     # typecheck + build + test + lint + format:check + check:release
+```
 
-- **A harness is a plugin row list**, and it may live anywhere; it is **copied into the run directory**
-  when it runs. "The same harness" is therefore guaranteed by the copy plus the recorded
-  `stimulus.fingerprint`, not by where the file sits.
-- **Inspect before you run.** It is free, and it is the same resolution `harness_run` uses — whatever
+`check` is exactly the set of steps CI runs, and a red line holds that equivalence: it once ran the
+first four, so a green laptop pushed red.
+
+The host-level path — actually mounting, starting a subject, arming a fault — is **not** covered by
+`check`, and installing a plugin does not prove it ran. Those steps are manual and written down in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#6-真机验证不属于-pnpm-run-check); the current state of what
+has and has not been verified is in [AGENTS.md](AGENTS.md).
+
+## Before you run
+
+Advice that changes the experiment, not rationale. The reasoning — why the record is shaped this way,
+what was tried and rejected — is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+- **Inspect before you run.** It is free, and it is the same resolution `harness_run` uses: whatever
   the inspection says about a harness, the run applies exactly that.
-- **A harness is a delta unless you seal it.** Mounted as a preset it sits inside the host, so by default
-  the subject also inherits every tool the host mounts for itself — the same forty-odd tools in every
-  variant you ever compare. `sealed: true` masks those, leaving exactly what the harness declares. Use it
-  whenever the tool set is the variable; leave it off when the question is "does this harness work in
-  *this* deployment".
-- **Skills are switched off by withholding the `skill` tool, not by masking.** The host has no skill
-  mask, and a same-name entry does not shadow an inherited one (measured twice: registrations land in the
-  host's layer, where the first one wins). The catalogue is only ever published to a subject that can
-  call `skill`, so sealing — which removes the host's `skill` tool — is enough. A harness that mounts
+- **A harness is a delta unless you seal it.** Mounted as a preset it sits inside the host, so by
+  default the subject also inherits every tool the host mounts for itself. `sealed: true` masks those.
+  Use it whenever the tool set is the variable; leave it off when the question is "does this harness
+  work in *this* deployment".
+- **Skills are switched off by withholding the `skill` tool, not by masking.** A harness that mounts
   `tool-skill` itself keeps that row, and the inherited catalogue then reaches the subject with no API
   able to stop it. `harness_inspect` reports what the subject can actually load.
-- **The shortcut is sugar, not the definition.** `harness.tools` names keys from a fixed catalogue and
-  `harness.persona` is an enum; it compiles into the same kind of row list and is captured the same way.
-  What the shortcut cannot express (groups, `isolate`, skills, `!!js` conditions) is a file.
-- **The host parses the file** (`cordis:include`); this plugin implements no second dialect.
-- **`deny`, `fail`, and `latency` are three different experiments**, not three settings of one.
-  `deny` removes the tool (tests detouring), `fail` returns an error (tests recovery), `latency`
-  withholds the answer (tests patience).
-- **Reading a finished session log synchronously is deprecated in the host** (`snapshotEvents`,
-  `eventAt`, `ownEvents` all say *new calls are prohibited*). This plugin folds `session/event` instead.
-
-Full rationale, with `file:line` evidence and the assumptions that turned out wrong, is in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
-[.agents/notes/2026-11-11-harness-shape.md](.agents/notes/2026-11-11-harness-shape.md).
-
-## Configuration
-
-| Field | Default | Meaning |
-|---|---|---|
-| `outputRoot` | `$DSH_HOME/harness-dispatcher/runs`, i.e. `~/.dsh/…` when it is unset | Directory that receives one subdirectory per run |
-| `harnessDir` | `$DSH_HOME/profiles/<name>/harness` | Where a bare harness name resolves, and where `harness_export` writes. Follows the profile directory, not the home: a harness file elsewhere cannot import its own rows |
-| `defaultTools` | `fs`, `fs-search`, `pwsh` | Catalogue keys the shortcut uses when it names none |
-| `defaultMaxDepth` | `1` | Delegation budget granted to a subject |
-| `maxTrials` | `10` | Upper bound on trials per call |
-| `trialTimeoutMs` | `0` | Per-trial wall-time budget; `0` disables it |
-
-## Status
-
-Unpublished (`private: true`). The unit-test suite covers the pure layer (capture, normalization, the
-folds, record writing, row compilation). The host-level path — actually mounting, starting a subject,
-arming a fault, reading a live fold — is verified by hand, and the verification steps are written down
-in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#6-真机验证不属于-pnpm-run-check) **because installing a
-plugin does not prove it ran**.
+- **`deny`, `fail` and `latency` are three different experiments**, not three settings of one: absence,
+  recovery, patience.
+- **Compare by `stimulus.fingerprint`, never by file name.** It covers the harness content, the route
+  and the delegation depth.
 
 ## License
 
-MIT
+[MIT](LICENSE)
