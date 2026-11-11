@@ -1,27 +1,20 @@
 /**
  * The shortcut's vocabulary: the only place a subject row is named from a fixed table.
  *
- * ## Why a catalogue still exists now that the harness is a file
+ * The catalogue is **not** the definition of a harness — a harness is a row-list file (see
+ * `.agents/notes/2026-11-11-harness-shape.md`). It makes the *shortcut* safe: compiling rows by hand is
+ * where a typo becomes a silently different stimulus, so a fixed table turns it into an error.
  *
- * It is **not** the definition of a harness any more — a harness is a row-list file (see
- * `.agents/notes/2026-11-11-harness-shape.md`). The catalogue is what makes the *shortcut* safe:
- * `harness: { tools: ['fs', 'fs-search'] }` has to compile into rows, and compiling by hand is where a
- * typo would become a silently different stimulus. A fixed table turns that typo into an error.
+ * Two namespaces: a shortcut names **catalogue keys** (`fs`) for what it mounts and **model-facing tool
+ * names** (`read`) for what `faults[].tool` breaks. Confusing them is silent — a fault naming `fs`
+ * matches nothing, so it never fires and the run looks like a clean baseline.
  *
- * ## Two namespaces, and why `furnishes` exists
+ * `furnishes` is the static half of that check and only a lower bound: a file harness names rows we
+ * cannot see, so the authoritative check compares faults against the names observed after mounting
+ * (see [subject.ts](subject.ts)).
  *
- * A shortcut names **catalogue keys** (`fs`, `fs-search`, …) for what it *mounts*, and **model-facing
- * tool names** (`read`, `grep`, …) for what it *breaks* via `faults[].tool`. Those are different
- * namespaces, and confusing them is a real failure: `faults: [{tool: 'fs', mode: 'fail'}]` matches no
- * tool, so the fault never fires and the run looks like a clean baseline.
- *
- * `furnishes` is the static half of that check. It is only a *lower bound*, though: a file-based
- * harness names rows we cannot see, so the authoritative check compares faults against the tool names
- * observed after mounting (see [subject.ts](subject.ts)). The catalogue's job is to reject a
- * misspelled key before anything is mounted.
- *
- * The lists below are the `defineTool({ name })` values of each package. They are a **contract with the
- * host**, so they are pinned by a redline; re-check them when `engines.dsh` moves.
+ * The lists below are each package's `defineTool({ name })` values — a contract with the host, pinned by
+ * a redline and to be re-checked when `engines.dsh` moves.
  *
  * @module dsh-harness-dispatcher/catalog
  */

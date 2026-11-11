@@ -1,20 +1,15 @@
 /**
  * One tool: turn a shipped preset into a harness file you can edit.
  *
- * ## Why subtraction beats authoring
+ * The hard part of writing a harness is not syntax, it is not knowing what a working one looks like.
+ * `readDocument(id)` dumps a declaration's child rows in the Loader's own dialect, so the answer is
+ * something **known to mount on this host**: delete what you want gone, then inspect it. That also
+ * replaces any prose reference to the row syntax.
  *
- * The hard part of writing a harness is not the syntax, it is not knowing what a working one looks like.
- * `agentPresets.readDocument(id)` dumps a declaration's child rows in the Loader's own dialect, so this
- * tool answers that with something **known to mount on this host**: delete what you want gone, then
- * inspect it.
- *
- * This is also why a reader does not need a separate row-syntax reference: a working example that this
- * very host mounts beats any prose description of the dialect.
- *
- * The dump round-trips because `readDocument` renders `plugins` through `entryListSchema`, whose `!!js`
- * nodes are the *unevaluated* text — so re-mounting genuinely re-evaluates them, which is what a
- * harness snapshot should do. (The registry's "nothing accepts YAML back" caveat is about the whole
- * document with its display metadata, not this child list.)
+ * It round-trips because `readDocument` renders `plugins` through `entryListSchema`, whose `!!js` nodes
+ * stay unevaluated text — re-mounting re-evaluates them, which is what a snapshot should do. The
+ * registry's "nothing accepts YAML back" caveat is about the whole document with its display metadata,
+ * not this child list.
  *
  * @module dsh-harness-dispatcher/tools/harness-export
  */

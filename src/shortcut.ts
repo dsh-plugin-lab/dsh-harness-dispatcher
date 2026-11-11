@@ -1,21 +1,15 @@
 /**
  * The shortcut: a handful of scalars compiled into harness rows.
  *
- * ## Why this is sugar and not the definition
+ * A harness under test is a **row list** (see `.agents/notes/2026-11-11-harness-shape.md`). Most
+ * ablations are small ("the same thing minus the web tools"), so this compiles them to rows and
+ * **produces a file too**, captured into the run directory like an authored one.
  *
- * A harness under test is a **row list**; see `.agents/notes/2026-11-11-harness-shape.md`. This module
- * exists because most ablations are small ("the same thing minus the web tools"), and writing a file to
- * say that is friction. So the shortcut compiles to rows, and **produces a file too**, which is captured
- * into the run directory exactly like an authored one.
+ * There is no second execution path: shortcut rows and file rows go through the same mount, audit and
+ * probe, and only `source` says which door they came through.
  *
- * The consequence that matters: there is no second execution path. Shortcut rows and file rows go
- * through the same mount, the same audit and the same probe, and the run record describes them the
- * same way. Only `source` says which door the rows came through.
- *
- * ## What is *not* here
- *
- * Faults are not part of the harness (see [fault.ts](fault.ts)), and neither is the task or the model
- * route. Keeping this module to harness-only fields is what makes "one variable at a time" checkable.
+ * Faults, the task and the model route are not here — keeping this module harness-only is what makes
+ * "one variable at a time" checkable.
  *
  * @module dsh-harness-dispatcher/shortcut
  */

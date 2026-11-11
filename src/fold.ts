@@ -1,31 +1,20 @@
 /**
  * One reducer over a subject Session's committed events, producing two views of the same trial.
  *
- * ## Two views, one fold
+ * | view | question |
+ * |---|---|
+ * | {@link TraceFeatures} | *what did it do?* |
+ * | {@link ObservedModelInput} | *what was it given?* |
  *
- * A trial answers two different questions, and they must never be conflated:
+ * The second view is why two runs can be called "the same harness" without trusting a file: the
+ * subject's own log records the rendered system prompt and the request header it was built under.
  *
- * | view | question | example |
- * |---|---|---|
- * | {@link TraceFeatures} | *what did it do?* | 3 tool calls, 1 error, 4.1 s |
- * | {@link ObservedModelInput} | *what was it given?* | this prompt, these tool schemas, this route |
+ * Features are folded from the `session/event` feed, never read off a finished log: `snapshotEvents`,
+ * `eventAt` and `ownEvents` are all marked "new calls prohibited" in the running host.
+ * {@link summarize} runs the same reducer over an array, so a persisted log re-folds identically.
  *
- * The second one is the reason this repository can claim two runs used "the same harness" without
- * trusting a file: the subject's own log records the rendered system prompt (`system/message`) and the
- * exact request header it was built under (`request/header`, carrying the call config and the assembled
- * tool schemas). Nothing has to be inferred, and nothing has to be read back from disk.
- *
- * ## Read path
- *
- * Features are folded **incrementally from the `session/event` feed**, never read off a finished log.
- * `Session.snapshotEvents()` / `eventAt()` / `ownEvents()` all carry `@deprecated … new calls are
- * prohibited` in the running host. {@link summarize} is the same reducer over an array of events, so a
- * persisted log can be re-folded later and must agree with the live fold.
- *
- * ## What is deliberately NOT here
- *
- * No statistic and no semantic judgement. The fold records the raw facts a judgement needs — the last
- * tool failure, the final text, the structured answer — and stops. See docs/ARCHITECTURE.md §4.3.
+ * No statistic and no judgement — the fold records what a judgement needs and stops. See
+ * docs/ARCHITECTURE.md 的「折叠的边界是硬的」.
  *
  * @module dsh-harness-dispatcher/fold
  */

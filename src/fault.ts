@@ -1,22 +1,13 @@
 /**
  * Injected tool faults: the shape, and the two checks that stop a fault from being a silent no-op.
  *
- * ## Faults are not part of the harness
+ * A fault is a **time-varying** stimulus applied on the tool pipelines, not a row in the harness (see
+ * [gate.ts](gate.ts)). So the same harness can run under different faults — harness and fault stay two
+ * independent variables — and a fault can reach a tool the harness mounts, which we never parsed.
  *
- * A fault is a **time-varying** stimulus applied on the tool pipelines, not a row in the subject's
- * harness (see [gate.ts](gate.ts) and docs/ARCHITECTURE.md §2). Keeping it out of the harness has
- * two consequences worth stating:
- *
- *   - the same harness file can be run under different faults, so "harness" and "fault" are two
- *     independent variables instead of one entangled fingerprint;
- *   - a fault can be injected into a tool the harness file mounts, which we never parsed.
- *
- * ## The failure worth preventing
- *
- * A fault naming a tool that cannot be reached produces a **well-formed record of a condition that was
- * never applied**. That is worse than no experiment at all, so it is rejected — and the check runs
- * against the tool names *observed after mounting*, not against a static catalogue, because a
- * file-based harness may mount anything.
+ * A fault naming an unreachable tool would produce a well-formed record of a condition that was never
+ * applied. That is worse than no experiment, so it is rejected against the tool names *observed after
+ * mounting*, not a static catalogue.
  *
  * @module dsh-harness-dispatcher/fault
  */

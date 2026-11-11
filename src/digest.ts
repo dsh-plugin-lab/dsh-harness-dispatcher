@@ -1,14 +1,12 @@
 /**
  * Short, stable digests — the machine identity of everything this bench compares.
  *
- * Two questions need a cheap answer, and both are answered here rather than by comparing prose:
+ * Answers two questions without comparing prose: did the operator change the harness file (digest the
+ * bytes), and did two trials receive the same model input (digest the prompt and tool schemas).
  *
- *   1. *Did the operator change the harness file?* — digest the bytes.
- *   2. *Did two trials receive the same model input?* — digest the assembled prompt and tool schemas.
- *
- * FNV-1a over bytes, rendered as 8 lowercase hex characters. Not cryptographic and not meant to be:
- * it only has to make "same input → same value, different input → different value" true and cheap,
- * so a record can be grouped without re-reading what it digested.
+ * FNV-1a over bytes, 8 lowercase hex characters. Not cryptographic and not meant to be — it only has to
+ * make "same input → same value" true and cheap, so a record can be grouped without re-reading what it
+ * digested.
  *
  * @module dsh-harness-dispatcher/digest
  */

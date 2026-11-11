@@ -1,17 +1,12 @@
 /**
  * One trial: start a subject, arm the two per-session seams, wait, record.
  *
- * ## Ordering that is load-bearing
- *
- * Both seams are armed **before** the result is awaited. A subject that finishes in one turn emits its
- * events on the way to resolving the result, so arming afterwards loses the earliest events and
- * produces a record whose `trace` understates the run. Disarming happens *after* the read for the same
- * reason: the read must not observe a half-released accumulator.
- *
- * ## Failure is data
+ * Both seams are armed **before** the result is awaited and disarmed **after** it is read. A subject
+ * that finishes in one turn emits its events on the way to resolving, so arming late loses the earliest
+ * ones and understates the trace.
  *
  * A subject that errors, refuses, hits its token ceiling or is aborted produces **a record**, not an
- * exception. Only a fault in this plugin throws. See AGENTS.md discipline 4.
+ * exception. Only a fault in this plugin throws (AGENTS.md discipline 4).
  *
  * @module dsh-harness-dispatcher/trial
  */

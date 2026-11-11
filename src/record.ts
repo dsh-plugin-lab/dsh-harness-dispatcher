@@ -1,24 +1,16 @@
 /**
  * One run, on disk: the captured harness, the run metadata, a reader's note, and one line per trial.
  *
- * There is deliberately no query API, no aggregation and no statistics here — see
- * docs/ARCHITECTURE.md §4.4. The moment this module grows a `mean()`, the analysis口径 lives inside the
- * plugin, and the data stops being recomputable under a different one.
+ * No query API, no aggregation, no statistics — the moment a `mean()` appears here, the analysis口径
+ * lives inside the plugin and the data stops being recomputable under a different one.
  *
- * ## Why the harness file is copied in
+ * The harness is copied in verbatim so the directory is self-sufficient evidence: hand it to someone
+ * and they can see what the subject was assembled from without hunting for a file that may have moved.
+ * Same in-memory capture as the mount ([harness.ts](harness.ts)), written under a stem that never
+ * varies so tooling finds it, with a truthful extension so the host can parse it on replay.
  *
- * A run directory is meant to be **self-sufficient evidence**: hand it to someone else and they can see
- * what the subject was assembled from, and re-run it, without hunting for a file that may have moved or
- * changed. That is why the harness is captured here verbatim rather than referenced by path.
- *
- * The copy is byte-identical to what was mounted, because both come from the same in-memory capture (see
- * [harness.ts](harness.ts)). It is written under a stem that never varies — `harness.<ext>` — so tooling
- * can find it, while the extension stays truthful so the host can parse it on replay.
- *
- * ## Consequence worth stating loudly
- *
- * The copy is **verbatim**, and a row's `config` can hold anything the plugin accepts — including
- * credentials. So a harness file must not carry secrets: whatever is in it lands in the evidence.
+ * The copy is verbatim, and a row's `config` can hold anything — including credentials. A harness file
+ * therefore must not carry secrets: whatever is in it lands in the evidence.
  *
  * @module dsh-harness-dispatcher/record
  */

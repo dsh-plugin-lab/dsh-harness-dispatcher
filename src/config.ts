@@ -47,12 +47,10 @@ export interface ResolvedConfig extends Config {
 /**
  * Resolve the paths a profile leaves blank.
  *
- * `harnessDir` defaults to **inside the profile directory**, and that is not cosmetic. A harness file's
- * bare `@deepseek-ai/…` row names resolve through the host's interception layer only when the importing
- * file sits inside a profile tree or a linked package; measured on Windows against `0.2.2-rc.1`, a
- * harness file anywhere else imports and then fails every row with `MODULE_NOT_FOUND`. A default
- * outside the profile would therefore produce exports that cannot run — the worst kind of wrong default,
- * because it looks like it worked.
+ * `harnessDir` defaults **inside the profile directory**, and that is not cosmetic: a harness file's
+ * bare `@deepseek-ai/…` row names only resolve when the importing file sits inside a profile tree or a
+ * linked package, so a default elsewhere would export files that cannot run — the worst kind of wrong
+ * default, because it looks like it worked.
  *
  * @param config - configuration as the host validated it.
  * @param baseUrl - the plugin context's base URL, i.e. the profile's composition file.

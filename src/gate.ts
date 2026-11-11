@@ -1,19 +1,14 @@
 /**
  * The fault gate: one Host-level seam that breaks tools **only for a subject Session**.
  *
- * Why a gate and not a row inside the subject's preset (the obvious design):
+ * Not a row inside the subject's preset, for three reasons: a fault row would have to sit after every
+ * tool row (`tools.restrict()` rejects unknown names, so one wrong order kills the mount); a row can
+ * only change what the subject *starts with*, while the pipelines below carry `exec.agent` and so reach
+ * work already running, children included; and one implementation means every variant is degraded by
+ * exactly the same mechanism — a precondition for comparing variants.
  *
- *   1. A preset-mounted fault row would have to sit *after* every tool row, because `tools.restrict()`
- *      rejects unknown global tool names — one wrong order and the whole preset fails to mount, so the
- *      experiment dies instead of producing a result. See docs/ARCHITECTURE.md §2.5.
- *   2. A preset row can only change what the subject *starts with*. The three tool pipelines below are
- *      **Scoped** events that carry `exec.agent`, so a single global listener can apply per-subject
- *      behaviour to work that is already running, including a subject's own children.
- *   3. One implementation means every Harness variant is degraded by exactly the same mechanism —
- *      a precondition for comparing variants.
- *
- * The gate is armed per trial and disarmed when the trial ends, so an idle gate costs one map lookup
- * and never changes any other agent's behaviour.
+ * Armed per trial and disarmed at its end, so an idle gate costs one map lookup and changes nothing for
+ * any other agent.
  *
  * @module dsh-harness-dispatcher/gate
  */

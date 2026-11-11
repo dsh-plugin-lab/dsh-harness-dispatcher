@@ -1,16 +1,10 @@
 /**
  * Plugin entry: the Host half of the harness bench.
  *
- * Mounts three tools, one skill, and two inert listeners, and nothing else:
- *
- *   1. `harness_inspect` — mount a harness, report what it would give the subject, spend nothing;
- *   2. `harness_export` — write a shipped preset's rows out as an editable harness file;
- *   3. `harness_run` — run one task N times against one harness, record every trial;
- *   4. the usage skill, so an agent finds the loop and its traps without reading source;
- *   5. the fault gate's three tool-pipeline listeners (inert until a trial arms them);
- *   6. the fold collector's committed-event listener (inert for unarmed sessions);
- *
- * plus a system-prompt section that appears only when those tools are visible in that agent's scope.
+ * Mounts three tools, one skill and two inert listeners — `harness_inspect` (mount and report, spend
+ * nothing), `harness_export` (a preset's rows as an editable file), `harness_run` (one task, N trials),
+ * the usage skill, the fault gate's three tool-pipeline listeners, and the fold collector's event
+ * listener — plus a prompt section that appears only where those tools are visible in scope.
  *
  * @module dsh-harness-dispatcher
  */
@@ -33,15 +27,11 @@ export type { PluginConfig }
 
 /**
  * All four are hard dependencies on purpose. A bench that silently degraded when one was missing would
- * still produce records — records that were measured against nothing.
+ * still produce records — measured against nothing.
  *
- * `tools` registers the tools; `agentPresets` mounts and audits the harness; `subagents` starts the
- * subject; `systemPrompt` carries the guidance.
- *
- * `skills` is deliberately **not** injected: the usage skill is registered when the host has a skill
- * registry and skipped with a log line when it does not, and the capability surface reports
- * `skills: null` in that case. Making it required would refuse to load this plugin in a profile that
- * ships no skills, for something that is helpful rather than load-bearing.
+ * `skills` is deliberately **not** injected: the usage skill is helpful, not load-bearing, so it is
+ * registered when a registry exists and skipped otherwise, and the surface reports `skills: null`.
+ * Requiring it would refuse to load this plugin in a profile that ships no skills.
  */
 export const inject = ['tools', 'agentPresets', 'subagents', 'systemPrompt']
 
