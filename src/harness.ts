@@ -290,10 +290,15 @@ export function harnessRows(captured: CapturedHarness, mountPath: string): reado
 }
 
 /**
- * A row that hides tools the host would otherwise hand the subject.
+ * A row that hides the tools the host would otherwise hand the subject.
  *
  * Must be mounted before the harness's own rows: a scope's own registrations are exempt from
  * restrictions, so ordering is what leaves the harness visible and the inherited tools masked.
+ *
+ * **Tools only.** A skill cannot be masked from here — `ctx.skills.register()` files into the layer of
+ * the registry's own context (the host), so a same-name entry lands beside the thing it was meant to
+ * shadow and the first registration wins; measured twice on `0.2.2-rc.1`. The subject is cut off from
+ * skills by not being given a `skill` tool: the host publishes no catalogue without one.
  * @param deny - tool names to remove; empty produces no row at all.
  * @returns zero or one row.
  */

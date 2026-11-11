@@ -19,7 +19,7 @@ tag 形态、事故判例搬进来 —— 它们会漂，而且是**照着做才
   发布完**弃掉草稿**。
 - **发布态断言**：[scripts/check-release.mjs](../scripts/check-release.mjs)，
   已进 `pnpm run check`。它现在断言的东西**包含**「拒绝 `private: true`」。
-- **红线**：[test/redlines.test.ts](../test/redlines.test.ts)，16 组 55 条，已做反向控制。
+- **红线**：[test/redlines.test.ts](../test/redlines.test.ts)，全部通过且逐条做过反向控制。
 - **组织判据**：自动发现本仓（`dsh-` 前缀 + 清单有 `dsh` 字段），
   当前 `14 checks, 0 new findings`。
 

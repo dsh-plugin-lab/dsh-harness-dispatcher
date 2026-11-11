@@ -31,8 +31,15 @@
 别再往上面加东西。
 
 **默认是增量，`sealed: true` 才封闭。** preset 住在宿主里，不 sealed 时受试体还继承宿主自己挂的工具
-（本机 40 个）—— 工具集是变量时用 sealed。它靠一个 `tools.restrict` 遮罩行实现，
-**遮罩行必须排在 harness 行之前**（红线 B15），反过来受试体一个工具都看不见。
+（本机几十个）—— 工具集是不是变量决定要不要 sealed。它靠 preset 里的一行 `src/sealed.ts`
+实现（`tools.restrict`），**那一行必须排在 harness 行之前**（红线 **B15**），反过来受试体一个工具
+都看不见。
+
+**技能只能靠「不给通道」来关。** 宿主没有技能遮罩 API，同名条目也盖不掉（`register()` 落全局层、
+同层先到者赢，实测两次失败）。受试体能看见技能的唯一前提是它**有 `skill` 工具**——宿主没这个工具
+就不发目录。所以 `sealed` 遮掉宿主工具时 `skill` 一并消失，技能目录就不会到受试体手里；
+**但 harness 自己挂 `tool-skill` 时那条行豁免于 restrict，继承的技能目录照样会漏，且拦不住。**
+详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 的「增量与封闭」。
 
 ## 动手前必查：宿主版本线
 
@@ -41,7 +48,7 @@
 - 在跑宿主：`dsh --version`；源码检出：`git -C <检出> log -1`
 - **判据以在跑的那版为准**，检出只用来读「为什么这么设计」。两侧不一致时**不许照检出写代码**，
   先核在跑版的 `lib/**/*.d.ts`。
-- 两侧差异的**实测记录**（11 处，含会静默改变行为的三条）在
+- 两侧差异的**实测记录**（含会静默改变行为的那几条）在
   [宿主扩展面核查](.agents/notes/2026-11-10-host-api-surface-0.2.2-rc.1.md)。
 
 **硬规则**：`snapshotEvents` / `eventAt` / `ownEvents` 在两侧都标着「新调用禁止」——
@@ -56,7 +63,7 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 **六步就是 CI 那六步**，红线 **B9** 钉住这条等价性 —— `check` 曾只跑前四项，于是本机全绿、推上去红了
 （[经过](.agents/notes/2026-11-11-local-check-must-equal-ci.md)）。
 
-- `test` 是纯函数单测 + **红线 16 组 55 条**，共 8 个文件 113 条；**不连宿主、不联网、不花额度**。
+- `test` 是纯函数单测 + **红线**，**不连宿主、不联网、不花额度**。
   覆盖与红线清单见 [test/README.md](test/README.md)。
 - **手改过源码就跑** `lint` / `format:check`。**改文件只用编辑工具**：PowerShell 的
   `Get-Content`/`Set-Content` 往返会改坏字符（实测把 `harnessDir` 毁成 `harnessiir`）。
@@ -93,6 +100,10 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 | Windows 传绝对路径给 `cordis:include` | 盘符被当 URL scheme，行**永远挂不上** | 一律 `pathToFileURL()`，红线 **B8** |
 | harness 文件放在 profile 树 / link 仓之外 | 每一行的裸模块名 `MODULE_NOT_FOUND` | `harnessDir` 默认在 profile 内，红线 **B8** |
 | preset 里写 `disabled: true` 想减宿主行 | **减不掉**：那只取消 preset 自己的行 | 要封闭就用 `sealed`，红线 **B15** |
+| 技能注册在宿主层，受试体也看得见 | 考生拿到**本评测台的使用说明**，实验被污染 | 只给它没有 `skill` 工具的环境；遮不住，见上 |
+| 插件注册的东西不用 `ctx.effect` 收 | 卸载后残留：热重载改了技能正文却仍是旧的 | 注册一律挂 fiber，红线 **B18** |
+| 拿「注册表里有什么」当「受试体能调什么」 | 探针**回答的不是它名字承诺的问题**，读记录的人反着推断 | 探针只报能到达的，红线 **B17** |
+| 以为同名条目能盖掉继承来的技能 | 实测两次都**盖不掉**（落全局层、先到者赢）；再这么写就是假封闭 | `sealed` 不承诺遮技能，红线 **B19** |
 | PowerShell 往返改文件 | 改坏字符，类型检查只抓到一部分 | 只用编辑工具 |
 | `check` 全绿 ≠ 插件能起来 | 加载期不被单测覆盖 | 真机跑一次 |
 | 一次「看起来跑过了」的空实验 | 比一次报错贵得多 | 挂载 + 审计 + 探针在 trial 之前；红线 B5/B6 |

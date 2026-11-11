@@ -37,9 +37,11 @@ harness_run({
 ```
 
 **`sealed` 是 2026-11-11 补上的，它改变了本笔记的默认心智模型。** 最初写的是「harness 是受试体的
-装配」，实现出来才发现 preset 挂在宿主树里，**默认只是一个增量** —— 受试体还继承宿主自己的四十来个
-工具。于是「工具集」根本不是受控变量。`sealed` 用一行 `tools.restrict` 把继承的那部分遮掉，实测
-极简 41→4、standard 69→32。代价与顺序约束见 §7.4；`disabled: true` 做不到这件事。
+装配」，实现出来才发现 preset 挂在宿主树里，**默认只是一个增量** —— 受试体还继承宿主自己的几十个
+工具，以及（只要有 `skill` 通道）宿主的技能目录。于是「工具集」根本不是受控变量；最刺眼的是
+**受试体能拿到本评测台自己的使用说明**，等于考生带着考试说明进考场。`sealed` 用一行把继承的工具
+遮掉，实测极简 41→4、standard 69→32；技能只能靠不给通道来关，遮不住 —— §7.5 记了两次失败。
+`disabled: true` 做不到这件事。
 
 **两条形式二选一，但只有一条实现路径。** 捷径在 `openRun` 之前就被编译成一份行列表并序列化成
 `harness.json`；此后两条输入完全无差别。记录里只保留 `stimulus.harness.source: 'file' | 'shortcut'`。
@@ -171,8 +173,11 @@ text ──┬─→ digest        声明层的身份，写进每条记录
 | 读 | 调用 | 回答 |
 |---|---|---|
 | 可见工具名 | `ctx.tools.definitions(key)` | 这份 harness 真的给了 `grep` 吗 |
-| 可见技能 | `ctx.skills.list({ scope: key })` | 换预设之后那个 skill 指针还在吗 |
+| 可加载技能 | `ctx.tools.definitions(key)` 里有 `skill` **且** `ctx.skills.list({ scope: key })` 里有它 | 换预设之后那个 skill 指针还在吗 |
 | 每行启用态 | `compositionInventory().rows[].enabled / fiberState` | 哪行其实没起来 |
+
+两个条件都问，是因为 `list({ scope })` 会把**全局层**合并进来：只问它，报的是「注册表里有什么」，
+不是「受试体够得到什么」（§7.5 就是这个错）。
 
 `auditRows` 只报「行挂了」；`acquireScope` 报**受试体到底看得见什么**——这才是判据。
 
@@ -349,8 +354,9 @@ roundtrip equal: true
 | 1 | include 的 `config.path` 传绝对路径 | `new URL('C:/x.yml', baseUrl)` 把盘符当 scheme，`fileURLToPath` 抛 `ERR_INVALID_URL_SCHEME`，**行永远不挂**（`dsh-app-boot/lib/index.js:739`） | 一律 `pathToFileURL()`。**Windows 上绝对路径必定失败** |
 | 2 | 挂 run 目录里那份副本 | `Include` 把 `baseUrl` 设成文件所在目录；裸模块名只在 profile 树内 / link 过的包内才经拦截层解析，run 目录两者都不是 → **每一行 `MODULE_NOT_FOUND`** | 挂操作者的原文件，副本只作证据 |
 | 3 | `harnessDir` 默认 `~/.dsh/harness-dispatcher/harness` | 同上：落在解析基准之外，导出的文件不可用 | 默认从 `ctx.baseUrl` 派生到 **profile 目录内** |
+| 4 | 技能注册在宿主层，受试体自然看不到 | **看得到**：`standard` 那次受试体收到了完整的技能目录，其中一条是本插件自己的使用说明（见 §7.5） | 只靠「不给 `skill` 工具」；遮不住，也如实写在文档里 |
 
-三条都进了红线 **B8**，并做了反向控制（把修复改回，测试变红）。
+前三条都进了红线 **B8**，并做了反向控制（把修复改回，测试变红）；第四条进 **B17 / B19**。
 
 ### 7.2 还没验的
 
@@ -381,6 +387,43 @@ roundtrip equal: true
 真正能减的是 `tools.restrict`，而它只作用于**调用它的作用域**。所以遮罩必须是 preset 里的**一行**，
 且排在 harness 行之前（§1.2）。这条顺序不是风格：反过来的话受试体一个工具都看不见，
 而「看得见的空结果」比报错危险得多。红线 **B15** 钉住它。
+
+### 7.5 第三个：受试体拿到了本评测台的使用说明
+
+`sealed` 补上之后，`harness_inspect` 报封起来的极简 harness 有 **4 个工具、6 条技能**。
+「6 条技能」立刻不对：那个受试体连 `skill` 工具都没有。
+
+三条消息各自成立、合起来错，解压子会话的 `session.v4.jsonl.zstd` 才看清（122 个 zstd 帧）：
+
+| run | harness | 工具 | 收到的技能目录 | 系统提示里的 bench 段 |
+|---|---|---|---|---|
+| `04-09-16` | minimal 未封 | 41 | 无（没有 `skill` 工具） | **有** |
+| `04-09-52` | standard | 69 | **41 条，含本插件自己的说明** | **有** |
+| `04-22-46` | minimal `sealed` | 4 | 无 | 无 |
+
+于是有四个独立事实，之前被当成一个：
+
+1. **系统提示段**由 `harness_run` 是否可见控制 —— 未封的 harness 继承宿主工具，段就漏了；
+2. **技能目录**由 `skill` 工具是否可见控制（`dsh-tool-skill` 在 `agent/pre-step` 里先问这一点）；
+3. **`sealed` 只关了前两个**，因为它只有工具那一半；
+4. **`surface.skills` 报的是注册表在作用域里的条目**，`list({ scope })` 会合并全局层，所以它
+   把「受试体够不到」的东西算成了它的能力面。
+
+修法是三处，各一条红线：**B17**（探针只报能到达的）、**B18**（注册挂 fiber，否则热重载后旧正文继续赢）、
+**B19**（`sealed` 只承诺实测过的）。第 2 条之前一直是潜伏的：`skills.register()` 返回的 disposer
+被丢掉了，而宿主把它记在**注册表自己**的 ctx 上。
+
+**技能遮不住 —— 试过两次，两次都失败，记在这里免得下次重跑。** 想的是「注册表最近一层赢同名」，
+于是在 preset 层里注册一份同名、`modelInvocable: false` 的条目盖掉继承来的那条：目录按该标记过滤、
+`skill` 工具也拒载，看起来正好。实测（自动路径 + 手写一行做二分）**继承来的 6 条原样保留**。
+真原因：`ctx.skills.register()` 按 `scopeOf(this.ctx)` 归属，而 `this.ctx` 是**注册表服务自己的
+ctx（宿主）**，不是调用方 —— 条目落进全局层，与被遮对象同层，同层同名**先到者赢**。
+
+所以技能只有一个开关：**给不给受试体 `skill` 工具**。宿主没有这个工具就不发目录
+（`dsh-tool-skill` 在 `agent/pre-step` 里先问这一点）。`sealed` 遮宿主工具时 `skill` 一起消失，
+于是封起来的 harness 天然没有技能通道 —— 实测 `no-skill-channel.yml` 报
+`0 skill(s): no \`skill\` tool here, so none is loadable`。反过来，**harness 自己挂 `tool-skill` 时
+那条行属于 preset、豁免于 restrict，继承的目录照样会漏，且没有 API 能拦** —— 这是宿主的能力缺口。
 
 ---
 

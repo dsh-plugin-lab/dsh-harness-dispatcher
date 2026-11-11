@@ -56,6 +56,12 @@ has to hunt for the original file:
   variant you ever compare. `sealed: true` masks those, leaving exactly what the harness declares. Use it
   whenever the tool set is the variable; leave it off when the question is "does this harness work in
   *this* deployment".
+- **Skills are switched off by withholding the `skill` tool, not by masking.** The host has no skill
+  mask, and a same-name entry does not shadow an inherited one (measured twice: registrations land in the
+  host's layer, where the first one wins). The catalogue is only ever published to a subject that can
+  call `skill`, so sealing — which removes the host's `skill` tool — is enough. A harness that mounts
+  `tool-skill` itself keeps that row, and the inherited catalogue then reaches the subject with no API
+  able to stop it. `harness_inspect` reports what the subject can actually load.
 - **The shortcut is sugar, not the definition.** `harness.tools` names keys from a fixed catalogue and
   `harness.persona` is an enum; it compiles into the same kind of row list and is captured the same way.
   What the shortcut cannot express (groups, `isolate`, skills, `!!js` conditions) is a file.
