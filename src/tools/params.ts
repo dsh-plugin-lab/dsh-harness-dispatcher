@@ -86,7 +86,9 @@ export const ROUTE_PARAMETERS = {
     type: 'string',
     description:
       'Model route override; supply together with model. Route is request-level: it is NOT in the ' +
-      'harness file, so one file can be run under two routes.',
+      'harness file, so one file can be run under two routes. In `harness_inspect`, passing `provider` ' +
+      'alone — no `model`, no `preset`, no `harness` — instead lists the models that route advertises. ' +
+      'That call can be slow; the bare listing cannot.',
   },
   model: { type: 'string', description: 'Model route override; supply together with provider.' },
   max_depth: { type: 'number', description: 'Delegation budget granted to the subject.' },
@@ -223,7 +225,42 @@ export function faultsOf(args: FaultArgs): FaultInput[] {
   }))
 }
 
-/** The LLM runtime as route validation needs it. Structural, so no extra peer dependency. */
+/** One registered provider route, as the host describes it. */
+export interface ProviderInfo {
+  /** Route key, i.e. what `provider` names. */
+  readonly id: string
+  /** Human-readable name, for a listing that has to be read by a person. */
+  readonly name: string
+}
+
+/** One model a provider route advertises, as its adapter described it. */
+export interface ModelInfo {
+  readonly id: string
+  readonly name: string
+  readonly description?: string | undefined
+  /**
+   * Accepted input modalities. **Absent means unknown, and unknown is not a promise** — the same
+   * distinction the image gate in [harness-run.ts](harness-run.ts) is built on.
+   */
+  readonly inputModalities?: readonly string[] | undefined
+}
+
+/**
+ * The LLM runtime, as this plugin needs it. Structural, so no extra peer dependency.
+ *
+ * The two discovery calls are deliberately asymmetric, and that asymmetry is why
+ * `harness_inspect` has two entry points rather than one:
+ *
+ * - {@link ModelRouter.listProviders} is **synchronous** and local — the host's own words are
+ *   "detached provider metadata in registration order". It reads a registry, so it costs nothing.
+ * - {@link ModelRouter.listModels} is **asynchronous because the adapter decides** whether answering
+ *   means asking its endpoint (`LlmAdapter.listModels`); `resolveModelInfo`'s optional `signal` is
+ *   the host admitting the lookup is "adapter-owned".
+ *
+ * So a caller who only wants to know what exists must not be made to await an adapter.
+ */
 export interface ModelRouter {
   resolveModelInfo(provider: string, model: string): Promise<unknown>
+  listProviders(): readonly ProviderInfo[]
+  listModels(provider: string): Promise<readonly ModelInfo[]>
 }
