@@ -33,7 +33,7 @@ harness 文件的裸模块名只在那里解析得到（见 [AGENTS.md](AGENTS.m
 | [sealed.ts](sealed.ts) | `apply` —— 一行 `tools.restrict`，遮掉继承来的工具 | `harness.ts` 的 `sealedRows` 生成它的行 | **B15 / B19**（只管工具；技能遮不住） |
 | [tool.ts](tool.ts) | `apply` + `toolSpecOf` —— 从行 config 长出一个模型可见工具 | 只在 harness 文件里按名字使用 | **B20** |
 | [shortcut.ts](shortcut.ts) | `normalizeShortcut` / `shortcutRows` / `shortcutLabel` | `harness` | `shortcut` 单测 |
-| [subject.ts](subject.ts) | `mountSubject` / `surfaceOf` / `hostToolNames` / `hostSkillNames` / `presetList` / `presetSummaries` / `rowProblems` / `presetIdFor` | 三个工具 | **B10 / B17**（`register` 后必须读回 `.broken`；`surface` 只报能到达的）+ **B21**（列表要标默认、坏的要连原因列出） |
+| [subject.ts](subject.ts) | `mountSubject` / `surfaceOf` / `hostToolNames` / `presetList` / `presetSummaries` / `rowProblems` / `presetIdFor` | 三个工具 | **B10 / B17**（`register` 后必须读回 `.broken`；`surface` 只报能到达的）+ **B21**（列表要标默认、坏的要连原因列出） |
 
 `harness.ts` 是全仓最危险的文件：它同时拥有「取字节 / 算摘要 / 生成挂载行 / 决定挂哪个路径」。
 `mountPathFor` 与 `harnessRows` 的分工是**真机纠正出来的**，别再合并回去。

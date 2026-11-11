@@ -81,6 +81,11 @@ export function presetIdFor(scope: string): string {
   return `bench-${scope}`
 }
 
+/** Sorted model-facing names from a definition list, the shape both callers need. */
+function toolNames(definitions: readonly { readonly name: string }[]): string[] {
+  return definitions.map((definition) => definition.name).sort()
+}
+
 /**
  * Every tool name the host makes globally visible, i.e. what a subject would inherit.
  *
@@ -90,31 +95,7 @@ export function presetIdFor(scope: string): string {
  * @returns sorted tool names.
  */
 export function hostToolNames(ctx: Context): readonly string[] {
-  return ctx.tools
-    .definitions()
-    .map((definition) => definition.name)
-    .sort()
-}
-
-/**
- * Every skill name the host registers globally, i.e. what a subject would inherit.
- *
- * The global layer alone, which is what an unscoped `list()` reads. A skill a harness registers in its
- * own preset layer is part of the harness, so it is deliberately not here.
- *
- * **Reporting only.** These names cannot be masked (see [harness.ts](harness.ts) on `sealedRows`), so this
- * exists to tell a reader what the subject inherits, not to feed a mask.
- * @param ctx - context outside any preset.
- * @returns sorted model-invocable names; empty when the host has no skill registry.
- */
-export async function hostSkillNames(ctx: Context): Promise<readonly string[]> {
-  const skills: SkillCatalog | undefined = ctx.get('skills')
-  if (skills === undefined) return []
-  const found = await skills.list({})
-  return found
-    .filter((skill) => skill.invocation.modelInvocable)
-    .map((skill) => skill.name)
-    .sort()
+  return toolNames(ctx.tools.definitions())
 }
 
 /**
@@ -265,10 +246,7 @@ export async function surfaceOf(ctx: Context, presetId: string): Promise<Capabil
   // Written with try/finally rather than `await using` so every cleanup in this plugin reads the same.
   const lease = await presets.acquireScope(presetId)
   try {
-    const tools = ctx.tools
-      .definitions(lease.key)
-      .map((definition) => definition.name)
-      .sort()
+    const tools = toolNames(ctx.tools.definitions(lease.key))
     return { rows, tools, skills: await loadableSkills(ctx, lease.key, tools) }
   } finally {
     await lease[Symbol.asyncDispose]()

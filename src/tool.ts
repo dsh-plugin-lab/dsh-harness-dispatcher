@@ -101,22 +101,13 @@ export function toolSpecOf(config: Config): ToolSpec {
 /**
  * Stand up one model-facing tool from the row's config, for the agent this row is mounted under.
  *
- * **Why this exists.** Without it, varying a tool's *description* — the single routing signal a model
- * sees — means writing and installing a package, which breaks the free edit-inspect-run loop the rest of
- * the bench is built on. With it, one harness file can define a tool, or redefine a shipped one.
+ * It registers into this preset's layer, so the tool belongs to the subject alone and a name the host
+ * already has is *replaced* — that is how a shipped tool's description or parameters become a harness
+ * variable. A collision inside this preset fails the mount instead. Failure and latency are `faults`'
+ * job, not this row's. Reasoning in [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md), under
+ * 造工具与改工具.
  *
- * **Scope.** A row inside a preset registers into that preset's layer, and a nearer registration shadows
- * a farther one. So the tool is visible to the subject alone, and a name that already exists at host
- * level is *replaced* rather than duplicated — which is how a shipped tool's description becomes a
- * harness variable. A name that collides **inside this preset** fails the mount instead: edit the other
- * row, because two rows in one layer claiming one name has no principled winner.
- *
- * **Not a fault.** This tool always succeeds with `result`. Failing and slow behaviour belongs to
- * `faults` (`fail` / `latency`), which sits on the tool pipelines beside the harness and applies to any
- * visible tool, this one included. Re-implementing it here would be two mechanisms for one thing.
- *
- * The registration is owned by this row's fiber: the host files a registration's disposer under its own
- * context, so a discarded one would outlive the mount and keep answering after the subject is disposed.
+ * The registration is owned by this row's fiber, so it cannot outlive the mount.
  */
 export function apply(ctx: Context, config: Config): void {
   const spec = toolSpecOf(config)
