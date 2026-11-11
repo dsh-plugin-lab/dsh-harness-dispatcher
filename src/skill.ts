@@ -86,11 +86,25 @@ score anything — the records are the deliverable, and analysis happens outside
 - Do not put credentials in a harness file. It is copied verbatim into the run directory.
 `
 
+/** Routing text; the only part of a skill the model sees before loading it. */
+const DESCRIPTION =
+  'How to use this bench: inspect a harness for free, export a working one to edit, run a task ' +
+  'against it, and read the records. Covers the two tool-name namespaces and why runs are compared ' +
+  'by fingerprint.'
+
 /**
  * Register the skill, when the host has a skill registry.
  *
+ * The registration is owned by this plugin's fiber. `register()` files its disposer under the
+ * **registry's** context, so a caller that discards the return value leaves the entry alive after the
+ * plugin unloads — and a reload then hits "already registered", keeps the previous body, and reports
+ * nothing: an edit that looks applied and is not.
+ *
+ * A failure is logged and not thrown: the tools are the bench, the skill only explains them, so a
+ * profile that cannot take the skill must still get a working bench.
+ *
  * @param ctx - the plugin's context.
- * @returns whether the skill was registered; `false` means this profile mounts no skill registry.
+ * @returns whether the skill was registered; `false` means no registry, or the registration threw.
  */
 export function registerSkill(ctx: Context): boolean {
   const skills: SkillRegistry | undefined = ctx.get('skills')
@@ -100,13 +114,14 @@ export function registerSkill(ctx: Context): boolean {
     )
     return false
   }
-  skills.register({
-    name: SKILL_NAME,
-    description:
-      'How to use this bench: inspect a harness for free, export a working one to edit, run a task ' +
-      'against it, and read the records. Covers the two tool-name namespaces and why runs are compared ' +
-      'by fingerprint.',
-    content: CONTENT,
-  })
+  try {
+    ctx.effect(
+      () => skills.register({ name: SKILL_NAME, description: DESCRIPTION, content: CONTENT }),
+      'harness.skill',
+    )
+  } catch (error) {
+    ctx.logger.warn(`harness-dispatcher: the usage skill was not registered: ${String(error)}`)
+    return false
+  }
   return true
 }
