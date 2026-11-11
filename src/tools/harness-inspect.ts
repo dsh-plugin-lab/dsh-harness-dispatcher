@@ -18,7 +18,14 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { normalizeFaults, assertFaultsReachable } from '../fault.ts'
 import type { ResolveDeps } from '../harness.ts'
 import { harnessLabel, harnessRows, resolveHarness, sealedRows } from '../harness.ts'
-import { hostToolNames, mountSubject, presetIdFor, rowProblems, surfaceOf } from '../subject.ts'
+import {
+  SKILL_TOOL,
+  inheritedBy,
+  mountSubject,
+  presetIdFor,
+  rowProblems,
+  surfaceOf,
+} from '../subject.ts'
 import type { CapabilitySurface } from '../subject.ts'
 import {
   FAULTS_PARAMETER,
@@ -111,8 +118,8 @@ export function registerHarnessInspect(ctx: Context, deps: HarnessInspectDeps): 
               type: 'text',
               text:
                 value.problems.length === 0
-                  ? `${head}\n${tools}`
-                  : `${head}\n${tools}\n\nProblems:\n${value.problems.join('\n')}`,
+                  ? `${head}\n${tools}\n${skillLine(value)}`
+                  : `${head}\n${tools}\n${skillLine(value)}\n\nProblems:\n${value.problems.join('\n')}`,
             },
           ]
         },
@@ -193,7 +200,7 @@ async function inspect(
     // The mask goes first: a scope's own registrations are exempt, so mounting the harness after it
     // keeps the harness's tools and hides only the inherited ones.
     rows: [
-      ...sealedRows(args.harness?.sealed === true ? hostToolNames(ctx) : []),
+      ...sealedRows(args.harness?.sealed === true ? inheritedBy(ctx) : []),
       ...harnessRows(resolved.captured, mountPath),
     ],
   })
@@ -269,4 +276,27 @@ function checkFaults(
   } catch (error) {
     return error instanceof Error ? error.message : String(error)
   }
+}
+
+/**
+ * One line for the skill half of the surface.
+ *
+ * Three cases that must not read the same: no registry on this host, a registry the subject cannot
+ * reach, and names it can load. Printing the names alone left a reader unable to tell "no skills" from
+ * "nobody looked" — and the scope's six inherited skills used to be reported for a subject with no way
+ * to call one.
+ * @param value - the tool's own output.
+ * @returns one line.
+ */
+function skillLine(value: {
+  readonly tools: readonly string[]
+  readonly skills?: readonly string[]
+}): string {
+  if (value.skills === undefined) return 'no skill registry on this host'
+  if (value.skills.length === 0) {
+    return value.tools.includes(SKILL_TOOL)
+      ? '0 skill(s)'
+      : `0 skill(s): no \`${SKILL_TOOL}\` tool here, so none is loadable`
+  }
+  return `${String(value.skills.length)} skill(s): ${value.skills.join(', ')}`
 }

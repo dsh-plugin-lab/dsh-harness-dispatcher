@@ -142,9 +142,10 @@ export interface RunHandle {
  * two files are comparable. 1 was the enum-shaped harness with `harness`/`trace` on every line; 2 is the
  * captured-harness shape; **3 renamed `harness` to `stimulus.harness`, `assembly` to `modelInput`, and
  * `effective` to `surface`** — same data, one vocabulary, so a 2 and a 3 file are not interchangeable by
- * accident.
+ * accident. **4 narrowed `surface.skills` from "skills registered for that scope" to "skills the
+ * subject can load"**, so a 3 file's skill list can include names the subject had no way to reach.
  */
-const RECORD_SCHEMA = 3
+const RECORD_SCHEMA = 4
 
 /** The note a reader finds first. Short on purpose: it answers "which field do I compare?" */
 const README = `This directory is one benchmark run.

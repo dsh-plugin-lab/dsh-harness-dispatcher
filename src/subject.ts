@@ -42,7 +42,13 @@ export interface CapabilitySurface {
   readonly rows: readonly RowFact[]
   /** Model-facing tool names callable in the subject's scope, sorted. */
   readonly tools: readonly string[]
-  /** Skill names visible in the subject's scope, sorted. `null` when the host has no skill registry. */
+  /**
+   * Skill names the subject can actually load, sorted; `null` when the host has no skill registry.
+   *
+   * Reachable, not present: a skill is only loadable if the subject can call the `skill` tool, and the
+   * host publishes its catalogue on that same condition. Counting what the registry holds for the scope
+   * instead reported six skills to a subject that had no way to load one.
+   */
   readonly skills: readonly string[] | null
 }
 
@@ -91,13 +97,58 @@ export function hostToolNames(ctx: Context): readonly string[] {
 }
 
 /**
+ * Every skill name the host registers globally, i.e. what a subject would inherit.
+ *
+ * The global layer alone, which is what an unscoped `list()` reads. A skill a harness registers in its
+ * own preset layer is part of the harness, so it is deliberately not here.
+ *
+ * **Reporting only.** These names cannot be masked (see [harness.ts](harness.ts) on `sealedRows`), so this
+ * exists to tell a reader what the subject inherits, not to feed a mask.
+ * @param ctx - context outside any preset.
+ * @returns sorted model-invocable names; empty when the host has no skill registry.
+ */
+export async function hostSkillNames(ctx: Context): Promise<readonly string[]> {
+  const skills: SkillCatalog | undefined = ctx.get('skills')
+  if (skills === undefined) return []
+  const found = await skills.list({})
+  return found
+    .filter((skill) => skill.invocation.modelInvocable)
+    .map((skill) => skill.name)
+    .sort()
+}
+
+/**
+ * The model-facing tool that loads a skill.
+ *
+ * A host-contract name, like the catalogue in [catalog.ts](catalog.ts): `@deepseek-ai/dsh-tool-skill`
+ * registers it and publishes the catalogue on `agent/pre-step` only where that tool is visible, so this
+ * one string decides whether the subject can reach any skill at all.
+ */
+export const SKILL_TOOL = 'skill'
+
+/**
+ * What a sealed harness has to hide: everything the host would otherwise hand the subject.
+ * @param ctx - context outside any preset.
+ * @returns the tool names to deny.
+ */
+export function inheritedBy(ctx: Context): readonly string[] {
+  return hostToolNames(ctx)
+}
+
+/**
  * The skill registry as this module needs it.
  *
  * Declared structurally instead of imported so this plugin does not take a peer dependency on a service
  * it uses only when the host happens to mount it.
  */
 interface SkillCatalog {
-  list(options: { readonly scope: object }): Promise<readonly { readonly name: string }[]>
+  list(options: { readonly scope?: object }): Promise<readonly SkillSummary[]>
+}
+
+/** The part of a skill summary that decides reachability. */
+interface SkillSummary {
+  readonly name: string
+  readonly invocation: { readonly modelInvocable: boolean }
 }
 
 /**
@@ -172,17 +223,35 @@ export async function surfaceOf(ctx: Context, presetId: string): Promise<Capabil
       .definitions(lease.key)
       .map((definition) => definition.name)
       .sort()
-    return { rows, tools, skills: await skillNames(ctx, lease.key) }
+    return { rows, tools, skills: await loadableSkills(ctx, lease.key, tools) }
   } finally {
     await lease[Symbol.asyncDispose]()
   }
 }
 
-async function skillNames(ctx: Context, scope: object): Promise<string[] | null> {
+/**
+ * The skills the subject can reach: the ones a `skill` tool in its own scope would let it load.
+ *
+ * @param ctx - context that owns the registry.
+ * @param scope - the subject's scope key.
+ * @param tools - the tool names visible in that same scope.
+ * @returns sorted loadable names; `null` when the host has no skill registry.
+ */
+async function loadableSkills(
+  ctx: Context,
+  scope: object,
+  tools: readonly string[],
+): Promise<string[] | null> {
   const skills: SkillCatalog | undefined = ctx.get('skills')
   if (skills === undefined) return null
+  // No loader, no reachable skill — and the host sends no catalogue either. Saying "the registry holds
+  // six" here is how a sealed subject came to be described as having skills it could not name.
+  if (!tools.includes(SKILL_TOOL)) return []
   const found = await skills.list({ scope })
-  return found.map((skill) => skill.name).sort()
+  return found
+    .filter((skill) => skill.invocation.modelInvocable)
+    .map((skill) => skill.name)
+    .sort()
 }
 
 /**
