@@ -55,10 +55,14 @@ harness 文件的裸模块名只在那里解析得到（见 [AGENTS.md](AGENTS.m
 | 文件 | 导出 | 说明 |
 |---|---|---|
 | [index.ts](index.ts) | `name` / `inject` / `apply` | 唯一装配点：三个工具 + skill + 提示段 |
-| [skill.ts](skill.ts) | `SKILL_NAME` / `registerSkill` | 代码注册的 skill；`skills` 服务**可选**，注册挂 `ctx.effect`（**B19**） |
+| [skill.ts](skill.ts) | `SKILL_NAME` / `readSkillBody` / `registerSkill` | 代码注册的 skill；正文是 [../skills/dsh-harness-bench/SKILL.md](../skills/dsh-harness-bench/SKILL.md)，`skills` 服务**可选**，注册挂 `ctx.effect`（**B18**） |
 
 `skill.ts` 用代码注册而不是文件目录：文件式 skill 在没把 `customSkillDirs` 指过去的 preset 里
-**不可见且不报错**，是个死指针。内容本身受红线 **B12** 约束（必须写清三个陷阱）。
+**不可见且不报错**，是个死指针。但**正文是文件**（`skills/<name>/SKILL.md`），apply 时读盘：
+散文该由人审、该能直接 diff，不该是打包器输入里的一个模板字符串。改正文不用重新编译。
+代价是三条必须自己守的纪律，都有断言：文件要随包发布（`check:release`）、正文为空要**响亮失败**
+（宿主不校验 `content`，空的会在目录里出现、加载时渲染成空）、路径按**产物位置**推算
+（`src/` 与 `lib/` 都在包根下一级，所以 `../skills` 两种布局同一个式子）。
 注册必须挂在 fiber 上：宿主把 disposer 记在**它自己**的 ctx 上，丢掉返回值就会在卸载后残留 ——
 热重载之后改了正文仍然是旧的那一份，而且不报错。
 
@@ -84,7 +88,7 @@ harness 文件的裸模块名只在那里解析得到（见 [AGENTS.md](AGENTS.m
 | `sealed`（工具集封闭） | `sealed.ts` + `harness.ts` 的 `sealedRows` + `subject.ts` 的 `inheritedBy` → 红线 **B15**（遮罩行必须在前）/ **B19**（不承诺遮技能） |
 | `surface` 报什么（能到达 vs 存在） | `subject.ts` 的 `loadableSkills` → 红线 **B17** → `tools/harness-inspect` 的那行文案 |
 | `harness_inspect` 的三种用法（列 preset / 查 preset / 查 harness） | `subject.ts` 的 `presetList`/`presetSummaries` → 红线 **B21** → `tools/harness-inspect` 的输出 schema 与三个渲染分支 |
-| skill 正文 | [skill.ts](skill.ts) 的 `CONTENT` → 红线 **B22**（上限 + 事实清单）→ 改完在真机确认它出现在技能目录里 |
+| skill 正文 | [../skills/dsh-harness-bench/SKILL.md](../skills/dsh-harness-bench/SKILL.md) → 红线 **B22**（上限 + 事实清单 + 缺文件/空正文要响亮）→ `check:release` 断言它随包发布 → 改完真机确认它仍在技能目录里 |
 | 造工具 / 改工具的语义 | `tool.ts` 的 `toolSpecOf` → 红线 **B20** → [造工具与改工具](../docs/ARCHITECTURE.md#342-造工具与改工具dsh-harness-dispatchertool) → `package.json` 的 `exports` 与 `tsdown.config.ts` 的 `entry` |
 | run 目录的形状（新增落盘文件） | `record.ts` 的 `openRun` → [数据出口只有两个函数](../docs/ARCHITECTURE.md#44-数据出口只有两个函数) → 两个 README 的目录树 |
 | 工具目录新增一个键 | `catalog.ts` → 红线 **B1** → `catalogLine()` |
