@@ -11,6 +11,7 @@
 
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { parameterSchemaSpecToJsonSchema, validateArgs } from '@deepseek-ai/dsh-tools'
@@ -28,7 +29,7 @@ import { presetIdFor, presetSummaries, rowWarnings } from '../src/subject.ts'
 import { toolSpecOf } from '../src/tool.ts'
 import { stoppedByBudget } from '../src/trial.ts'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 /** Every non-test, non-build source file, as `relative path → text`. */
 function sources(): Map<string, string> {
@@ -1437,5 +1438,49 @@ describe('B28 — a stop stops everything', () => {
     expect(line).toContain('stopped before every trial ran')
     // The same run without the stop is a different sentence, so the news cannot be read as boilerplate.
     expect(summaryLine({ ...summary, stopped: false })).not.toContain('stopped')
+  })
+})
+
+describe('B29 — nothing is bound to one machine', () => {
+  /**
+   * The rule: the repository must be the same repository on any host. Two ways it was not.
+   *
+   * `src/config.ts` built its default directory from `homedir()` + a literal `.dsh`, so an instance
+   * running under `$DSH_HOME` wrote records into a different instance's tree — same plugin, wrong home.
+   * And the evidence note spelled the install root as `C:\Users\<someone>\AppData\…`, which is not a
+   * path convention, it is one person's disk; `npm root -g` reaches it from anywhere.
+   *
+   * The test reads the tree rather than the source alone: the leak that mattered was in a document.
+   */
+  const MACHINE_SPECIFIC = /[A-Z]:\\Users\\|\/home\/[a-z]|\/Users\/[a-z]|AppData|USERPROFILE/
+
+  it('resolves the host home through the host, not through `homedir()`', () => {
+    const config = stripComments(sources().get('src/config.ts') ?? '')
+    expect(config).toContain('dshHomePath(')
+    expect(config).not.toContain('homedir')
+  })
+
+  it('names no user directory anywhere in the repository', () => {
+    const offenders: string[] = []
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === 'node_modules' || entry.name === 'lib' || entry.name === '.git') continue
+        // This file quotes the pattern it forbids, the same way B13 quotes what it retires.
+        if (entry.name === 'redlines.test.ts') continue
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) {
+          walk(full)
+          continue
+        }
+        if (!/\.(ts|md|yml|yaml|json|txt|mjs)$/.test(entry.name)) continue
+        if (MACHINE_SPECIFIC.test(readFileSync(full, 'utf8'))) {
+          offenders.push(full.slice(ROOT.length).replaceAll('\\', '/'))
+        }
+      }
+    }
+    walk(ROOT)
+    // A `C:/x.yml` in a test is fine — it is an input proving a URL-scheme bug, not a place on a disk.
+    // What is not fine is a directory that exists on exactly one machine.
+    expect(offenders).toEqual([])
   })
 })

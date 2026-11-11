@@ -8,8 +8,8 @@
  */
 
 import z from '@deepseek-ai/schemastery'
+import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { fileURLToPath } from 'node:url'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULT_TOOLS } from './catalog.ts'
 
@@ -52,12 +52,15 @@ export interface ResolvedConfig extends Config {
  * linked package, so a default elsewhere would export files that cannot run — the worst kind of wrong
  * default, because it looks like it worked.
  *
+ * Defaults go through `dshHomePath()` rather than `homedir()`: the host's home is `$DSH_HOME` when set,
+ * so a hardcoded `~/.dsh` writes records into a different instance's tree.
+ *
  * @param config - configuration as the host validated it.
  * @param baseUrl - the plugin context's base URL, i.e. the profile's composition file.
  * @returns the same values with absolute directories.
  */
 export function resolveConfig(config: Config, baseUrl?: string | undefined): ResolvedConfig {
-  const home = join(homedir(), '.dsh', 'harness-dispatcher')
+  const home = dshHomePath('harness-dispatcher')
   return {
     ...config,
     outputRoot: config.outputRoot.trim() === '' ? join(home, 'runs') : config.outputRoot,

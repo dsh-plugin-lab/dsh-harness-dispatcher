@@ -28,6 +28,7 @@ export default [
         '@deepseek-ai/schemastery',
         '@deepseek-ai/dsh-agent',
         '@deepseek-ai/dsh-agent-preset-registry',
+        '@deepseek-ai/dsh-home-paths',
         '@deepseek-ai/dsh-session',
         '@deepseek-ai/dsh-session-projection',
         '@deepseek-ai/dsh-subagent',

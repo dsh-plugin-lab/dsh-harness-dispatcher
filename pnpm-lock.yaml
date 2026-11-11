@@ -17,6 +17,9 @@ importers:
       '@deepseek-ai/dsh-agent-preset-registry':
         specifier: ^0.2.2-rc.1
         version: 0.2.2-rc.1(9c6785167baebab4ae284cd7e4e74f93)
+      '@deepseek-ai/dsh-home-paths':
+        specifier: ^0.2.2-rc.1
+        version: 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/dsh-llm':
         specifier: ^0.2.2-rc.1
         version: 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)

@@ -17,13 +17,13 @@
 
 **核查对象**：本机**正在运行**的宿主 `@deepseek-ai/dsh@0.2.2-rc.1`（`dsh --version` = `0.2.2-rc.1`）。
 **唯一证据来源**：安装树的 `lib/**/*.d.ts`、各包 `package.json`、各包自带的说明文件。
-**对照物**（仅用于 §9 差异对照，**不是**契约）：源码检出 `D:\ProjectSomething\deepseek-harness`，
+**对照物**（仅用于 §9 差异对照，**不是**契约）：宿主源码检出，
 `HEAD = 1f81c047fc`，`tag: dsh-v0.2.1-rc.3`（`git describe --tags` = `dsh-v0.2.1-rc.3`）。
 
 **路径约定**：下文 `文件:行` 中的文件路径**相对于安装根**
 
 ```
-<ROOT> = C:\Users\speak\AppData\Roaming\npm\node_modules\@deepseek-ai\dsh\node_modules\@deepseek-ai\
+<ROOT> = <`npm root -g`>\@deepseek-ai\dsh\node_modules\@deepseek-ai\
 ```
 
 例如 `<ROOT>@deepseek-ai\dsh-session-projection\lib\types\index.d.ts:204` 简写为
@@ -848,7 +848,7 @@ disposable — the projection cache」。若走 storageDomain 存 trial 记录�
 
 ## 9 · 【最有价值】检出有 / 安装版没有（与反向）
 
-检出侧 = `D:\ProjectSomething\deepseek-harness` @ `dsh-v0.2.1-rc.3`（`1f81c047fc`）。
+检出侧 = 宿主源码检出 @ `dsh-v0.2.1-rc.3`（`1f81c047fc`）。
 下表每行都标了检出侧的**具体文件:行**，可复核。
 
 ### 9.1 `dsh-session-projection` —— 差异最密集，共 7 处

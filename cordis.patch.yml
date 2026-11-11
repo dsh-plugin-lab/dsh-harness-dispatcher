@@ -8,7 +8,7 @@
 # `config.outputRoot` is left unset on purpose: the plugin computes a default under the user's home
 # directory. Set it explicitly if records should land somewhere reviewable, e.g.
 #   config:
-#     outputRoot: D:/benchmarks/runs
+#     outputRoot: <an absolute directory for the records>
 #
 # **Never put credentials here.** This file is part of the repository.
 - insert:
