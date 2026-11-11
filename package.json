@@ -33,6 +33,10 @@
       "types": "./lib/sealed.d.ts",
       "import": "./lib/sealed.js"
     },
+    "./tool": {
+      "types": "./lib/tool.d.ts",
+      "import": "./lib/tool.js"
+    },
     "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
