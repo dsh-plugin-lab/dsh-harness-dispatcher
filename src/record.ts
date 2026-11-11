@@ -167,6 +167,23 @@ How to read it
 A harness file is copied verbatim into this directory, so never put credentials in one.
 `
 
+/** Name of the record file inside a run directory. Fixed, so tooling can find it. */
+export const RECORD_FILE = 'trials.jsonl'
+
+/**
+ * Where one run's directory is.
+ *
+ * Exported because a background run has to name its directory **before** the directory exists: the tool
+ * returns the handle while the run is still starting. One formula, so the promise and the `openRun` that
+ * keeps it cannot disagree.
+ * @param root - parent directory for run directories.
+ * @param runId - run identity, also the directory name.
+ * @returns absolute directory path.
+ */
+export function runDirectoryFor(root: string, runId: string): string {
+  return join(root, runId)
+}
+
 /**
  * Create a run directory and capture the harness into it.
  *
@@ -184,9 +201,9 @@ export async function openRun(
   meta: RunMeta,
   captured: CapturedHarness,
 ): Promise<RunHandle> {
-  const directory = join(root, meta.runId)
+  const directory = runDirectoryFor(root, meta.runId)
   const harnessPath = join(directory, captured.fileName)
-  const recordPath = join(directory, 'trials.jsonl')
+  const recordPath = join(directory, RECORD_FILE)
   const metaPath = join(directory, 'run.json')
   const existedBefore = await isDirectory(directory)
   await mkdir(directory, { recursive: true })

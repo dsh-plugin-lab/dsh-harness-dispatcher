@@ -17,10 +17,13 @@ import { CATALOG, DEFAULT_TOOLS, TOOL_CATALOG, TOOL_KEYS } from '../src/catalog.
 import { foldEvent, emptyFold, finishFold, summarize } from '../src/fold.ts'
 import { normalizeFaults } from '../src/fault.ts'
 import { harnessRows, harnessLabel, sealedRows } from '../src/harness.ts'
+import { jobOutcomeOf } from '../src/jobs.ts'
 import { normalizeShortcut, shortcutRows } from '../src/shortcut.ts'
 import { SKILL_NAME, readSkill, registerSkill, splitFrontmatter } from '../src/skill.ts'
+import { summaryLine } from '../src/run.ts'
 import { presetIdFor, presetSummaries, rowWarnings } from '../src/subject.ts'
 import { toolSpecOf } from '../src/tool.ts'
+import { stoppedByBudget } from '../src/trial.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
 
@@ -44,6 +47,20 @@ function sources(): Map<string, string> {
 
 const DEFAULTS = { tools: ['fs'] }
 
+/**
+ * The code that performs a run, wherever it currently lives.
+ *
+ * The run body moved from the tool to `run.ts` when the background job arrived, and every red line that
+ * held a promise about *how a run behaves* broke at once — because it named a file instead of a
+ * responsibility. These judgements are about the run, so they read the files the run is made of: the
+ * execution body and the tool that starts it.
+ */
+function runSources(): string {
+  return ['src/run.ts', 'src/tools/harness-run.ts']
+    .map((file) => sources().get(file) ?? '')
+    .join('\n')
+}
+
 /** A valid stub-tool config; each test perturbs one field. */
 const SPEC = {
   name: 'search_docs',
@@ -51,6 +68,18 @@ const SPEC = {
   parameters: { query: { type: 'string' as const, required: true } },
   result: 'no results',
 }
+
+/** One trial outcome, as a run summary carries it. Each test perturbs the fields it is about. */
+const OUTCOME = {
+  index: 1,
+  childId: 'child-1',
+  stopReason: 'completed',
+  wallMs: 1000,
+  toolCalls: 1,
+  toolErrors: 0,
+  observationsAvailable: true,
+  timedOut: false,
+} as const
 
 describe('B1 — the catalogue is the only place a row is named', () => {
   it('every default tool is a real catalogue key', () => {
@@ -210,23 +239,19 @@ describe('B6 — a run leaves nothing behind', () => {
   it('removes a run directory that never reached its first trial', () => {
     // The alternative is a directory holding no trial, which is indistinguishable from a run whose
     // subject did nothing — a plausible empty result.
-    expect(sources().get('src/tools/harness-run.ts')).toMatch(
-      /if \(!started\)\s*await run\.discard\(\)/,
-    )
+    expect(runSources()).toMatch(/if \(!started\)\s*await run\.discard\(\)/)
   })
 
   it('keeps a partially recorded run and says so', () => {
     // A cancelled run has usually already written data. Deleting it would destroy the experiment;
     // failing silently would look like it was lost.
-    const tool = sources().get('src/tools/harness-run.ts') ?? ''
-    expect(tool).toMatch(/the directory is kept, it is data/)
+    expect(runSources()).toMatch(/the directory is kept, it is data/)
   })
 
   it('unmounts the harness and disposes the activation in a finally block', () => {
-    const tool = sources().get('src/tools/harness-run.ts') ?? ''
     const trial = sources().get('src/trial.ts') ?? ''
-    expect(tool).toMatch(/\}\s*finally\s*\{/)
-    expect(tool).toContain('subject.dispose()')
+    expect(runSources()).toMatch(/\}\s*finally\s*\{/)
+    expect(runSources()).toContain('subject.dispose()')
     expect(trial).toMatch(/activation\.dispose\(\)/)
   })
 
@@ -309,7 +334,7 @@ describe('B8 — the harness is captured, and the capture is what mounts', () =>
     // every `@deepseek-ai/…` row with MODULE_NOT_FOUND, because `Include` sets the resolution base to the
     // file's own directory. The run directory is outside every profile tree, so mounting the copy would
     // silently break every file harness.
-    const tool = sources().get('src/tools/harness-run.ts') ?? ''
+    const tool = runSources()
     expect(tool).toContain('mountPathFor(')
     // Precisely: the copy must not be the path handed to `harnessRows` directly.
     expect(tool).not.toMatch(/harnessRows\([^,]+,\s*run\.harnessPath\)/)
@@ -426,7 +451,7 @@ describe('B10 — the mount diagnostic is read back, once', () => {
 
   it('routes every mount through the one audited path', () => {
     // Two mount sites would mean two chances to forget the read-back.
-    for (const file of ['src/tools/harness-run.ts', 'src/tools/harness-inspect.ts']) {
+    for (const file of ['src/run.ts', 'src/tools/harness-inspect.ts']) {
       const text = sources().get(file) ?? ''
       expect(text, `${file} must mount through mountSubject`).toContain('mountSubject(')
       expect(text, `${file} must not register a preset directly`).not.toContain('presets.register(')
@@ -533,7 +558,7 @@ describe('B15 — a sealed harness is the whole tool set, not a delta', () => {
     // `tools.restrict` masks the scope it is called from, and a scope's own registrations are exempt.
     // Mounting the mask first is what keeps the harness's tools visible; reversed, the subject would
     // see nothing at all — a silent empty bench instead of an error.
-    for (const file of ['src/tools/harness-inspect.ts', 'src/tools/harness-run.ts']) {
+    for (const file of ['src/tools/harness-inspect.ts', 'src/run.ts']) {
       const code = sources().get(file) ?? ''
       const mask = code.indexOf('sealedRows(')
       const harness = code.indexOf('harnessRows(')
@@ -860,6 +885,86 @@ describe('B25 — a verdict names the thing it measured', () => {
   })
 })
 
+describe('B26 — a background run is the same run, only waited for differently', () => {
+  /**
+   * The rule: two waits, one experiment.
+   *
+   * `run_in_background` exists because the foreground call holds the caller's turn for as long as the
+   * trials take, and the host's answer to that is a job (`pwsh` and `workflow` both do it this way). The
+   * temptation is to write a second, cheaper execution path for it — which would give the same experiment
+   * two record shapes and, eventually, two behaviours behind one name. So the tool may only *choose* who
+   * waits; the run itself stays in one place.
+   */
+  it('has exactly one execution body, called by both waits', () => {
+    const tool = stripComments(sources().get('src/tools/harness-run.ts') ?? '')
+    // Both branches call the same function. Its body is not in this file at all.
+    expect(tool.match(/runBench\(/g) ?? []).toHaveLength(2)
+    expect(tool).not.toContain('runTrial(')
+    expect(tool).not.toContain('mountSubject(')
+    expect(tool).not.toContain('openRun(')
+    // And the run body is where the record is written, so one code path means one record shape.
+    const body = stripComments(sources().get('src/run.ts') ?? '')
+    expect(body).toContain('openRun(')
+    expect(body).toContain('runTrial(')
+    expect(body).toContain('mountSubject(')
+  })
+
+  it('starts the work with the job’s own cancellation, not the spent call signal', () => {
+    // The tool call has already returned by then, so its signal is spent: a run wired to it could not be
+    // stopped by `job_kill`, and every kill would look like it worked while the subject kept running.
+    // Only the background branch is held to this — the foreground call is *supposed* to use `exec.signal`.
+    const tool = stripComments(sources().get('src/tools/harness-run.ts') ?? '')
+    const background = tool.slice(tool.indexOf('function startBackground'))
+    expect(background).toContain('new AbortController()')
+    expect(background).toMatch(/runBench\([\s\S]{0,300}controller\.signal/)
+    expect(background).not.toContain('exec.signal')
+  })
+
+  it('says a background run has recorded nothing yet, instead of a zero', () => {
+    // `recorded: 0` at return time is a plausible measurement of "nothing happened"; the field is
+    // omitted, and the notice carries the counts.
+    const tool = sources().get('src/tools/harness-run.ts') ?? ''
+    expect(tool).toMatch(/Present only when this call waited/)
+    expect(tool).toMatch(/recordPath: \{ type: 'string' \}/)
+  })
+
+  it('streams per-trial progress on a channel the model can read', () => {
+    // Measured: lines appended with `channel: 'log'` never reached `job_output` — the registry filters
+    // that label out of the model's consuming read, so "progress is streamed" would have been false
+    // while looking implemented.
+    const tool = stripComments(sources().get('src/tools/harness-run.ts') ?? '')
+    expect(tool).not.toMatch(/channel:\s*'log'/)
+    expect(tool).toMatch(/job\.append\(/)
+    expect(tool).toMatch(/job\.updateProgress\(/)
+  })
+
+  it('maps a stopped run to `killed` and a broken one to `failed`', () => {
+    // A reader's next step differs: "somebody stopped it" is not "it broke".
+    expect(jobOutcomeOf(false, undefined, 'ok').status).toBe('completed')
+    // A killed job carries no detail: the registry merges the caller's kill reason, and repeating it
+    // here printed the reason twice in one status line.
+    expect(jobOutcomeOf(true, new Error('stopped by job_kill'), 'partial')).toEqual({
+      status: 'killed',
+      result: 'partial',
+    })
+    // `detail` is a status line, so a multi-line message is cut to its first line — measured: the whole
+    // paragraph ended up inside `[status: killed, …]`.
+    expect(
+      jobOutcomeOf(false, new Error('mount failed\nline two\nline three'), 'none'),
+    ).toMatchObject({ status: 'failed', detail: 'mount failed', result: 'none' })
+    // A non-Error is preserved rather than stringified into "[object Object]".
+    expect(jobOutcomeOf(false, 'boom', 'x').detail).toBe('boom')
+  })
+
+  it('refuses to run in the background where no controller serves the agent', () => {
+    // Silence would be worse than an error: the caller would wait on a notice that can never arrive,
+    // because without `tool-jobs` nothing routes a settlement.
+    const tool = sources().get('src/tools/harness-run.ts') ?? ''
+    expect(tool).toMatch(/ctx\.get\('jobs'\)/)
+    expect(tool).toMatch(/dsh-jobs/)
+  })
+})
+
 describe('B21 — a caller who knows nothing can still find out what exists', () => {
   /**
    * The rule: the free discovery step has to be reachable from zero knowledge. `harness_inspect` and
@@ -935,6 +1040,7 @@ describe('B22 — the skill is one page, and it says everything once', () => {
       /replaces/, // persona is a swap, not an addition — length says nothing
       /maxDepth/, // delegation is gated by the row, not by the request-level max_depth
       /timeout_ms/, // a budget-stopped trial is an observation, not a harness failure
+      /run_in_background/, // a long run is a job, not a held turn
     ]) {
       expect(body, `the skill no longer states ${String(fact)}`).toMatch(fact)
     }
@@ -1070,16 +1176,41 @@ describe('B23 — a trial stopped by its own budget is stopped, not just labelle
   })
 
   it('reports `timedOut` only for a trial the budget actually ended', () => {
-    // `budget.aborted` alone was true in the measured failure. The stop reason is what makes it a fact.
-    const code = stripComments(sources().get('src/trial.ts') ?? '')
-    expect(code).toMatch(/const timedOut =[\s\S]{0,200}stopReason === 'aborted'/)
+    // Behavioural: every combination the measured failure and its neighbours produce. `budget.aborted`
+    // alone was true in the failure, which is exactly why the stop reason has to be consulted.
+    const live = new AbortController()
+    const fired = new AbortController()
+    fired.abort()
+    const callerStopped = new AbortController()
+    callerStopped.abort()
+
+    expect(stoppedByBudget(fired.signal, live.signal, 'aborted')).toBe(true)
+    // The measured defect: the child finished before the cancellation landed.
+    expect(stoppedByBudget(fired.signal, live.signal, 'completed')).toBe(false)
+    // No budget at all, and a caller cancellation is not a timeout.
+    expect(stoppedByBudget(undefined, live.signal, 'aborted')).toBe(false)
+    expect(stoppedByBudget(fired.signal, callerStopped.signal, 'aborted')).toBe(false)
+    // The budget has not fired yet.
+    expect(stoppedByBudget(live.signal, live.signal, 'aborted')).toBe(false)
   })
 
   it('counts recorded trials and completed trials separately in what it returns', () => {
     // The measured run printed "0/1 trials recorded" while one line was on disk: the numerator was
     // `completed`, so a stopped trial read as a lost one.
-    const code = sources().get('src/tools/harness-run.ts') ?? ''
-    expect(code).toMatch(/trial\(s\) recorded/)
-    expect(code).toMatch(/\$\{String\(value\.recorded\)\}/)
+    const summary = {
+      runId: 'run-x',
+      fingerprint: 'abc',
+      directory: '/tmp/run-x',
+      recordPath: '/tmp/run-x/trials.jsonl',
+      harnessPath: '/tmp/run-x/harness.json',
+      trials: 2,
+      outcomes: [
+        { ...OUTCOME, index: 1, stopReason: 'aborted', timedOut: true },
+        { ...OUTCOME, index: 2, stopReason: 'aborted', timedOut: true },
+      ],
+    }
+    expect(summaryLine(summary)).toBe(
+      '2/2 trial(s) recorded, 0 completed → /tmp/run-x/trials.jsonl',
+    )
   })
 })

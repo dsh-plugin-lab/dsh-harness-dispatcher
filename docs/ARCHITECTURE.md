@@ -392,15 +392,30 @@ harness 文件所在目录，而 run 目录不在任何解析基准上，挂副�
 | `session/event` 折叠 | [src/fold.ts](../src/fold.ts)：受试体做了什么 + 被给了什么 | **已实现** |
 | 工具管线故障注入 | [src/gate.ts](../src/gate.ts)，三种模式 | **已实现** |
 | JSONL 导出 | [src/record.ts](../src/record.ts) | **已实现** |
-| 后台任务版（`ctx.jobs.start`） | 长跑用，取消权转给任务自己 | 后续 |
+| 后台任务版（`ctx.jobs.start`） | `harness_run` 的 `run_in_background`，见 §5.1 | **已实现** |
 | 评测面板（Projection + 客户端槽） | 只做展示，不影响记录 | 后续 |
 
-### 5.1 后台通道为什么是第二步
+### 5.1 后台通道：同一个工具的一个开关
 
-一个 trial 是一次完整子 agent 跑动，可能几分钟；N 个 trial 串起来会撞工具执行上限。
-原生解法是 `ctx.jobs.start`（`检出: docs/cookbook/adding-a-tool.md:53-55`），但它多一层生命周期：
-**一旦 `jobs.start()` 发布 id，取消权就从 `exec.signal` 转给任务自己**（`job_kill` / owner dispose）。
-先把「参数 → 子 agent → 记录」跑对，再加通道。
+一个 trial 是一次完整子 agent 跑动，可能几分钟；N 个 trial 串起来时，前台调用会让**调用方那一轮**
+一直等着。宿主的解法不是另一个工具，而是 `pwsh` 与 `workflow` 都在用的那个形状：**同一个工具加
+`run_in_background`**。
+
+- 默认前台：跑完再返回，短试验最省事。
+- `run_in_background: true`：`ctx.jobs.start()` 注册成 job 后**立刻返回 job id**，`job_output` 读逐 trial
+  进度，`job_kill` 取消，`job.done` 结算时**由运行时发完成通知**（忙则注入下一步、空闲则唤醒一轮）。
+
+**通知不是我们发的**，那是 `dsh-tool-jobs` 的职责；自己发就等于接管一个不归我们的循环
+（`tool-subagent` 的那条同样由 `subagents` 运行时发，同理）。
+
+取消权因此从 `exec.signal` 转给 job：工具调用已经返回，它的信号作废，所以 job 里的 run 用**自己的**
+`AbortController`。停一个受试体仍然只有 `dispose()` 那条路（§5.3）。
+
+**两个等待，一份执行体。** 执行体在 [src/run.ts](../src/run.ts)，工具只决定谁来等；否则同一个实验会有
+两种记录形状，最后变成两个不同的实验（红线 **B26**）。
+
+一个实测的坑：`job.append` 的 `log` 通道是「给观察者看的」，**永远不进模型**。逐 trial 的行一开始写在
+`log` 里，`job_output` 一个字都看不到；去掉通道标签才可见。
 
 ### 5.2 并发
 

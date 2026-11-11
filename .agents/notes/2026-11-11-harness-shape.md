@@ -531,6 +531,48 @@ loaded skill "dsh-harness-bench" source must be a string
 修法是把两处各自命名：`file digest …` 与 `fingerprint …`。它看起来是文案问题，但记录的可比性全靠读者
 分清这两个数。
 
+### 7.10 后台通道：照宿主的形状做，而不是自己发明
+
+`harness_run` 原本是同步阻塞的：一次调用把主 agent 那一轮占住，直到所有 trial 跑完。实测 3 个 trial
+约 12s，那次超时实验更让主 agent 等了 15.5s，而且**没有任何框架层的东西会切断它** ——
+`tool-call-timeout-policy` 只对声明了 `timeoutMs` 的工具生效，我们的工具一个都没声明。
+
+宿主的正解不是「另做一条后台通道」，而是**同一个工具加一个开关**。两个现成范例：
+`tool-pwsh` 的 `run_in_background`，以及 `tool-workflow`（脚本 fan-out 子 agent，形状最接近我们）。
+所以实现是：
+
+```
+run_in_background: false（默认） → await runBench(...)            → 句柄 + 每 trial 结果
+run_in_background: true          → ctx.jobs.start({kind:'harness', …}) → 立刻返回 jobId
+```
+
+几个不能少的细节，都是读宿主源码定下来的：
+
+- **执行体只有一份**（`src/run.ts` 的 `runBench`）。工具只决定「谁来等」。否则同一实验会长出两种记录
+  形状，最终变成两个不同的实验。红线 **B26**。
+- **后台用自己的 `AbortController`。** 工具调用的 `exec.signal` 在返回那一刻就作废；拿它收尾的话
+  `job_kill` 会「看起来成功了而受试体还在跑」。
+- **`job.done` 必须 resolve 成 `JobOutcome` 而不是抛**：`completed` / `killed` / `failed` 三态，
+  读的人下一步不同。`detail` 会进状态行，所以只放一行 —— 一开始放了整段，`[status: killed, …]`
+  里塞进了一整段段落。
+- **完成通知不由我们发。** 它是 `dsh-tool-jobs` 的：忙则注入下一步，空闲则唤醒一轮。
+  自己发等于接管一个不归我们的循环。
+- **`ctx.get('jobs')`，不写进 `inject`**：没有 job 服务时插件照样要能加载（同 `skills` 的做法）。
+
+真机结果（同一宿主）：
+
+| 项 | 结果 |
+|---|---|
+| 注册即返回 | 返回 `jobId` 与 run 目录，3 个 trial 随即落盘，目录与前台完全同构 |
+| 逐 trial 进度 | `job_output` 读到 `trial 1/6: completed, 1 call(s), 1 error(s), 17090ms`，状态行 `[status: running, trial 1/6]` |
+| 完成通知 | **两条都自动到达**，带未读的逐 trial 行 + 总结句，无需轮询 |
+| `job_kill` | 第 3 个 trial 被判 `aborted` 后停下，**记录保留**（3 条），之后 preset 只剩宿主那 4 个，无 `bench-*` 残留 |
+
+**这里也踩到一个「看似实现」的坑**：逐 trial 的行一开始写成 `job.append(line, { channel: 'log' })`，
+结果 `job_output` 一个字都读不到 —— 宿主的渲染规则是 `log` 通道属于「producer narration for
+observers」，**永不进模型**（`dsh-tool-jobs` 的 `renderModelDelta` 直接过滤掉）。去掉通道标签才可见。
+一句 `channel: 'log'` 就能让「进度会流给模型」变成假话，而且看代码像是做了。红线 **B26** 钉住。
+
 ---
 
 ## 8. 与 docs/ARCHITECTURE.md 的关系

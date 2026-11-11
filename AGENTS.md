@@ -89,12 +89,13 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
   出现孙会话、故障点名不可达工具被拒、未达 trial 的 run 目录被删掉、超时真的停住了受试体。
   同一批里抓到并修掉四个缺陷：超时只标记不停止（红线 **B23**）、注册的技能能列出却**加载不了**
   （缺 `source`，红线 **B24**）、能跑的 harness 被判「不能跑」、文件摘要与指纹共用一个词（后两条 **B25**）。
-- **没验的**：后台（`ctx.jobs`）通道 —— **它还没实现**，不是没跑。
+- **后台通道已实现并真机验过**（2026-11-11 晚）：`run_in_background: true` 注册即返回、`job_output`
+  读得到逐 trial 进度、完成通知自动到达、`job_kill` 之后记录保留且 preset 无残留。实现中发现
+  `job.append` 的 `log` 通道**不进模型**（红线 **B26**）。
+- **没验的**：`prompt` 仍不能带图/文件（见待办）。
 
 ## 待办
 
-- [ ] 后台通道（`ctx.jobs.start`）：长跑需要它，见
-  [能力面 §5.1](docs/ARCHITECTURE.md#51-后台通道为什么是第二步)。
 - [ ] `prompt` 仍是纯文本，没做成 `ContentBlock[]`（图 / 文件）。**已知缺口，不是已完成。**
 
 ## 活跃坑
@@ -115,6 +116,8 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 | 以为 `skills.register()` 过了就等于技能能用 | 注册只做**宽松**校验，加载正文时才要求 `source` 是字符串：目录里有它，`skill` 工具一调就报错（真机实测） | 注册对象带上 `source`，红线 **B24**（它真的调一次加载路径） |
 | 把「有警告」写成「不能用」 | 判定词比检查更狠：一份**跑通了**的 harness 被判 `NOT runnable`，操作者会放弃它 | 阻塞问题与建议分开两级，红线 **B25** |
 | 一个词指两个量（`digest`） | 文件摘要与刺激指纹都是 8 位十六进制，读者会以为文件被改过 | 各自命名：`file digest` / `fingerprint`，红线 **B25** |
+| 以为 `job.append` 的内容模型能看到 | 宿主的 `log` 通道**只给观察者**：逐 trial 行写进去，`job_output` 一个字都读不到 | 要模型读就别带通道标签，红线 **B26** |
+| 后台 run 用工具调用的 `signal` 收尾 | 调用已经返回，信号作废，`job_kill` 停不下来 | job 里用自己的 `AbortController`，红线 **B26** |
 | PowerShell 往返改文件 | 改坏字符，类型检查只抓到一部分 | 只用编辑工具 |
 | `check` 全绿 ≠ 插件能起来 | 加载期不被单测覆盖 | 真机跑一次 |
 | 一次「看起来跑过了」的空实验 | 比一次报错贵得多 | 挂载 + 审计 + 探针在 trial 之前；红线 B5/B6 |

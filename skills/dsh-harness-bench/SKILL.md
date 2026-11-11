@@ -27,7 +27,10 @@ nothing — the records are the deliverable, and analysis happens outside.
 2. **Start from something that runs.** `harness_export { preset: "standard", name: "minus-web" }`
    writes a working row list. Edit it with your file tools: delete rows, change `config`, add
    `disabled`, group rows with `isolate`. It is a Loader entry list, parsed by the host itself.
-3. **Run it.** `harness_run { task_id, prompt, trials, harness: { file: "minus-web" } }`.
+3. **Run it.** `harness_run { task_id, prompt, trials, harness: { file: "minus-web" } }`. Add
+   `run_in_background: true` when the trials would keep you waiting for minutes: it returns a job id,
+   `job_output` shows per-trial progress, the completion notice brings the totals, and `job_kill` stops
+   it while keeping what was already recorded.
 4. **Change one thing.** Keep `task_id` and `prompt` byte-identical between harnesses — that is the
    whole experiment.
 

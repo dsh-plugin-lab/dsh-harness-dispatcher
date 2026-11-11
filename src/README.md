@@ -42,9 +42,11 @@ harness 文件的裸模块名只在那里解析得到（见 [AGENTS.md](AGENTS.m
 
 | 文件 | 导出 | 谁依赖 | 改后必跑 |
 |---|---|---|---|
-| [trial.ts](trial.ts) | `runTrial` / `TrialPlan` / `TrialOutcome` | `tools/harness-run` | **B23** + `fold` 单测 |
+| [run.ts](run.ts) | `runBench` / `summaryLine` / `RunRequest` / `RunSummary` | `tools/harness-run`（两条等待都调它） | **B6 / B8 / B10 / B15**（执行体搬家后仍在这里）+ **B26**（唯一执行体） |
+| [trial.ts](trial.ts) | `runTrial` / `stoppedByBudget` / `TrialPlan` / `TrialOutcome` | `run` | **B23** + `fold` 单测 |
 | [abort.ts](abort.ts) | `onceAborted` | `trial` | `abort` 单测 |
-| [collector.ts](collector.ts) | `FoldCollector` | `tools/harness-run` | `fold` 单测 |
+| [jobs.ts](jobs.ts) | `jobOutcomeOf` + `JobRegistry` 等结构类型 | `tools/harness-run` | **B26**（`killed` / `failed` 分清；`detail` 只放一行） |
+| [collector.ts](collector.ts) | `FoldCollector` | `run` | `fold` 单测 |
 | [fold.ts](fold.ts) | `foldEvent` / `finishFold` / `summarize` / `TrialObservations` | `collector`、`record` | **B4 / B7** + `fold` 单测 |
 | [record.ts](record.ts) | `openRun` / `stimulusRecord` / `TrialRecord` | 三个工具 | **B5 / B6** + `record` 单测 |
 
@@ -79,7 +81,7 @@ frontmatter 的 `name` / `description` / `author` / `metadata.source`），apply
 | [tools/params.ts](tools/params.ts) | 三个工具共享的参数片段 | 三个工具 | B11 + 工具 schema 相关的全部单测 |
 | [tools/harness-inspect.ts](tools/harness-inspect.ts) | `harness_inspect` | — | **B11**（含 `{ preset }` 分支与路由校验） |
 | [tools/harness-export.ts](tools/harness-export.ts) | `harness_export` | — | B14（文档里的工具名） |
-| [tools/harness-run.ts](tools/harness-run.ts) | `harness_run` | — | **B5 / B6 / B8** |
+| [tools/harness-run.ts](tools/harness-run.ts) | `harness_run` | — | **B5 / B6 / B8 / B23 / B26** |
 
 `params.ts` 里 `FAULTS_PARAMETER` **必须包成 `{ faults: {…} }` 再展开**：
 直接展开一个值规格会把 `defineTool<const S, const O>` 的推断塌成宽 JSON 类型，`args.*` 全部失去类型。
@@ -103,6 +105,7 @@ frontmatter 的 `name` / `description` / `author` / `metadata.source`），apply
 | 观测折叠的语义 | `fold.ts` → `fold` 单测 → [折叠的边界是硬的](../docs/ARCHITECTURE.md#43-折叠的边界是硬的) → 红线 B4/B7 |
 | 故障模式 | `fault.ts` + `gate.ts` 三条管线 → [三种故障是三个不同的实验](../docs/ARCHITECTURE.md#23-三种故障是三个不同的实验不是同一个设置的三个档) |
 | 超时 / 取消（停住一个正在跑的受试体） | `trial.ts` 的 `onceAborted` 监听 → [停止一个正在跑的受试体](../docs/ARCHITECTURE.md#53-停止一个正在跑的受试体) → 红线 **B23** |
+| 后台 / 长跑（`ctx.jobs`） | `jobs.ts` 的结构类型 + `run.ts` 的执行体 → [后台通道](../docs/ARCHITECTURE.md#51-后台通道同一个工具的一个开关) → 红线 **B26** |
 | 依赖范围 | `engines.dsh` / `peerDependencies` / devDependencies **三处同批**，且逐字相同 |
 
 ## 参考

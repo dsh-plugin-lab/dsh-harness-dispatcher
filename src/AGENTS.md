@@ -8,17 +8,17 @@
 依赖方向**单向**，反过来就是设计坏了：
 
 ```
-index.ts ─→ tools/ ─→ harness / shortcut / subject / trial / record / fold
+index.ts ─→ tools/ ─→ run / harness / shortcut / subject / trial / record / fold
                           ↓
-                    catalog / digest / text / config / fault / gate / collector / abort
+                    catalog / digest / text / config / fault / gate / collector / abort / jobs
 ```
 
 - **`index.ts` 是唯一装配点。** 它注册工具、skill、提示段。别的东西不许调 `ctx.tools.define`。
-- **纯函数层不碰 `ctx`。** `fold` / `digest` / `catalog` / `text` / `fault` / `abort` 收数据、
+- **纯函数层不碰 `ctx`。** `fold` / `digest` / `catalog` / `text` / `fault` / `abort` / `jobs` 收数据、
   返数据，不注入服务 —— 这样它们能被单测直接跑，不需要假宿主。
 - **`tools/` 是唯一知道宿主 API 形状的地方。** 服务调用写在这里，不往下泄。
 
-## 九条硬约束（每条都对应一条红线）
+## 十条硬约束（每条都对应一条红线）
 
 1. **不解析 harness 文件的方言。** 文件交给宿主的 `cordis:include`；本仓只生成一条 include 行。
    自己解析就有了第二套定义，两边一旦不一致没人能判。（红线 **B8**）
@@ -42,6 +42,10 @@ index.ts ─→ tools/ ─→ harness / shortcut / subject / trial / record / fo
    **受理之前**：受理之后子会话不再与它相连，abort 一个信号停不下任何东西。所以预算到点要主动
    `dispose()`（它取消本轮、等 idle、把 `result` 结算成 `aborted`），并且**只有结果真的是
    `aborted` 才算 `timedOut`**。（红线 **B23**，真机实测：700ms 预算配出 15.5s 的 `completed`）
+10. **两个等待，一份执行体。** 前台调用和后台 job 只允许在「谁等」上不同，必须调同一个
+    `runBench()`；否则同一个实验会长出两种记录形状。后台那一侧用**自己的** `AbortController`
+    （工具调用的信号已作废），并且 `job.append` 不要带 `log` 通道 —— 那个通道**不进模型**。
+    （红线 **B26**）
 
 ## 命名：一个词管一件事
 

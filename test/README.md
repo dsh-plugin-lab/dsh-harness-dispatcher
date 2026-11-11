@@ -21,6 +21,7 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 | [shortcut.test.ts](shortcut.test.ts) | 捷径编译、工具排序、persona 变体 | [src/shortcut.ts](../src/shortcut.ts) |
 | [fault.test.ts](fault.test.ts) | 三种故障模式、可达性校验 | [src/fault.ts](../src/fault.ts) |
 | [abort.test.ts](abort.test.ts) | 预算到点时挂/摘监听的两个边界：已 abort、已 detach | [src/abort.ts](../src/abort.ts) |
+| [jobs.test.ts](jobs.test.ts) | 三种 job 结局的映射：完成 / 被杀 / 失败，以及状态行只放一行 | [src/jobs.ts](../src/jobs.ts) |
 | [record.test.ts](record.test.ts) | run 目录形状、`wx` 独占、`discard` | [src/record.ts](../src/record.ts) |
 | [catalog.test.ts](catalog.test.ts) | 目录键、默认集、描述生成 | [src/catalog.ts](../src/catalog.ts) |
 | [smoke.test.ts](smoke.test.ts) | 模块能 import、注册面存在 | [src/index.ts](../src/index.ts) |
@@ -54,6 +55,7 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 | B23 | 预算到点就真的停住受试体（`dispose()`），且只有结果 `aborted` 才算 `timedOut`；已记录与已完成分开报数 |
 | B24 | 注册出去的 skill 要**能加载**：带 `source` 与正文，不只是能列进目录 |
 | B25 | 判定词只说实测到的：挂载了不出力的行是**警告**；文件摘要与指纹不共用「digest」一个词 |
+| B26 | 后台 run 与前台 run 是同一个执行体；后台用 job 自己的取消信号；进度不带 `log` 通道（那个通道不进模型） |
 
 ## 已知盲区（**不是遗漏，是边界**）
 

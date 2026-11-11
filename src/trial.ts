@@ -60,6 +60,28 @@ export interface TrialDeps {
 }
 
 /**
+ * Whether this trial's own budget is what ended it.
+ *
+ * Three conditions, and each one is a measured case rather than a precaution: a trial with no budget was
+ * never timed out; a caller cancellation is not a timeout (`timedOut` must not blame the budget for the
+ * user's stop); and a result that says `completed` means the child finished inside the window between the
+ * budget firing and the cancellation landing. That last one was the defect: `timedOut: true` beside
+ * `stopReason: "completed"` is two facts that cannot both be true, in the one field a reader filters on to
+ * exclude interrupted trials.
+ * @param budget - the trial's own timer, if any.
+ * @param signal - the caller's cancellation.
+ * @param stopReason - what the runtime settled on.
+ * @returns whether to record this trial as timed out.
+ */
+export function stoppedByBudget(
+  budget: AbortSignal | undefined,
+  signal: AbortSignal,
+  stopReason: string,
+): boolean {
+  return budget !== undefined && budget.aborted && !signal.aborted && stopReason === 'aborted'
+}
+
+/**
  * Run one trial against the mounted harness and append its record.
  *
  * @param deps - the runtime seams.
@@ -118,12 +140,7 @@ export async function runTrial(
     // Read, then release: the accumulator must not outlive the trial that owns it.
     const observations = deps.collector.read(childId)
     disarmFold()
-    // Only a trial the budget actually ended counts as timed out. A child that finishes in the window
-    // between the budget firing and the cancellation landing ran to completion, and calling that
-    // "cut short" would put `timedOut: true` beside `stopReason: "completed"` — two facts that cannot
-    // both be true, in the one record a reader filters on to exclude interrupted trials.
-    const timedOut =
-      budget !== undefined && budget.aborted && !signal.aborted && result.stopReason === 'aborted'
+    const timedOut = stoppedByBudget(budget, signal, result.stopReason)
 
     const record: TrialRecord = {
       runId: plan.runId,
