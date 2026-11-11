@@ -9,8 +9,8 @@
  * about *what the code is allowed to contain*, which no runtime assertion can enforce.
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { CATALOG, DEFAULT_TOOLS, TOOL_CATALOG, TOOL_KEYS } from '../src/catalog.ts'
@@ -18,10 +18,9 @@ import { foldEvent, emptyFold, finishFold, summarize } from '../src/fold.ts'
 import { normalizeFaults } from '../src/fault.ts'
 import { harnessRows, harnessLabel, sealedRows } from '../src/harness.ts'
 import { normalizeShortcut, shortcutRows } from '../src/shortcut.ts'
-import { presetSummaries } from '../src/subject.ts'
+import { SKILL_NAME, readSkillBody } from '../src/skill.ts'
+import { presetIdFor, presetSummaries } from '../src/subject.ts'
 import { toolSpecOf } from '../src/tool.ts'
-import { SKILL_NAME } from '../src/skill.ts'
-import { presetIdFor } from '../src/subject.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
 
@@ -473,18 +472,12 @@ describe('B12 — the tools teach their own use', () => {
   })
 
   it('documents the two namespaces and the field to compare', () => {
-    const skill = sources().get('src/skill.ts') ?? ''
-    // Each of these is a trap that costs a real experiment when missed.
-    expect(skill).toMatch(/CATALOGUE KEYS/)
-    expect(skill).toMatch(/MODEL-FACING TOOL NAMES/)
-    expect(skill).toMatch(/fingerprint/)
-  })
-
-  it('keeps the skill body under the host prune threshold', () => {
-    // Above 8192 characters the standard preset's tool-result pruner trims the skill body.
-    const skill = sources().get('src/skill.ts') ?? ''
-    const body = skill.slice(skill.indexOf('const CONTENT = `'), skill.indexOf('`\n\n/**'))
-    expect(body.length).toBeLessThan(8192)
+    // Each of these is a trap that costs a real experiment when missed. The body is a file now, so this
+    // reads the artifact that ships rather than the module that registers it.
+    const body = readSkillBody()
+    expect(body).toMatch(/CATALOGUE KEYS/)
+    expect(body).toMatch(/MODEL-FACING TOOL NAMES/)
+    expect(body).toMatch(/fingerprint/)
   })
 })
 
@@ -810,11 +803,12 @@ describe('B22 — the skill is one page, and it says everything once', () => {
    * The rule: a skill is paid for on every load, so it stays short — but "short" must not be reached by
    * dropping a fact that costs an experiment when missed. This line holds both halves: the ceiling, and
    * a checklist of the facts, each of which was learned the hard way.
+   *
+   * The body is a file, so these assertions read the shipped artifact rather than a copy of it.
    */
+  const body = readFileSync(join(ROOT, 'skills', SKILL_NAME, 'SKILL.md'), 'utf8')
+
   it('stays under the host prune threshold with room to spare', () => {
-    const skill = sources().get('src/skill.ts') ?? ''
-    const start = skill.indexOf('const CONTENT = `')
-    const body = skill.slice(start, skill.indexOf('`\n\n/** Routing text'))
     // Above 8192 the standard preset's tool-result pruner trims the body mid-sentence.
     expect(body.length).toBeLessThan(8192)
     // And not by being terse to the point of losing facts: every section below must be present.
@@ -830,7 +824,6 @@ describe('B22 — the skill is one page, and it says everything once', () => {
   })
 
   it('keeps every fact that costs an experiment when missed', () => {
-    const skill = sources().get('src/skill.ts') ?? ''
     for (const fact of [
       /no arguments/, // discovery comes first: without an id nothing else works
       /CATALOGUE KEYS/,
@@ -842,8 +835,34 @@ describe('B22 — the skill is one page, and it says everything once', () => {
       /byte-identical/, // the task is the controlled variable
       /credentials/,
     ]) {
-      expect(skill, `the skill no longer states ${String(fact)}`).toMatch(fact)
+      expect(body, `the skill no longer states ${String(fact)}`).toMatch(fact)
     }
+  })
+
+  it('fails loudly when the body is missing or empty, instead of registering nothing', () => {
+    // The host does not validate `content`, so an empty body is a skill that appears in the catalogue
+    // and renders nothing — no error on any side. Reading it from a file adds exactly this risk, so the
+    // reader is what has to refuse.
+    expect(() => readSkillBody(join(ROOT, 'skills', SKILL_NAME, 'no-such-file.md'))).toThrow(
+      /could not be read/,
+    )
+    const empty = join(ROOT, 'test', 'fixtures', 'empty-skill.md')
+    mkdirSync(dirname(empty), { recursive: true })
+    writeFileSync(empty, '   \n\n', 'utf8')
+    try {
+      expect(() => readSkillBody(empty)).toThrow(/is empty/)
+    } finally {
+      rmSync(empty, { force: true })
+    }
+  })
+
+  it('ships the body, so an installed package can still read it', () => {
+    // Asserted independently of check-release because it is the failure mode with no runtime signal:
+    // the plugin loads, the skill just is not there.
+    const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+      files?: string[]
+    }
+    expect(manifest.files ?? []).toContain('skills')
   })
 })
 
