@@ -33,17 +33,15 @@ one.
 - **A skill registered by the plugin** (`dsh-harness-dispatcher`, same name as the package) carrying that
   loop and the traps that each cost an experiment, so an agent finds them without reading source.
 
-Records land in one **self-sufficient** directory per run — the harness it ran is copied in, so nobody
-has to hunt for the original file. Two different roots, and the split is deliberate:
+Records land in one **self-sufficient** directory per run. Two roots, and the split is deliberate:
 
 | | Default | Why there |
 |---|---|---|
-| **Records** (`outputRoot`) | `$DSH_HOME/harness-dispatcher/runs/<runId>/` | user data; one directory per run, self-sufficient |
-| **Harness files** (`harnessDir`) | `<profile>/harness/` | a harness file's bare row names only resolve inside a profile tree, so exporting them anywhere else produces files that cannot run |
+| **Records** (`outputRoot`) | `$DSH_HOME/harness-dispatcher/runs/<runId>/` | user data; one directory per run |
+| **Harness files** (`harnessDir`) | `$DSH_HOME/profiles/<name>/harness/` | it is the directory holding the profile's `cordis.patch.yml`, so it follows the **profile**, not the home: a harness file's bare row names only resolve inside a profile tree, and exporting anywhere else produces files that cannot run |
 
-With `$DSH_HOME` unset these are `~/.dsh/harness-dispatcher/runs/` and
-`~/.dsh/profiles/<profile>/harness/`. **There is no `<DSH_HOME>/harness-dispatcher/harness/`** — that
-path is only the fallback for a context with no profile file at all.
+`$DSH_HOME` unset means `~/.dsh`. **There is no `<DSH_HOME>/harness-dispatcher/harness/`** — that is only
+the fallback for a context with no profile file at all.
 
 ```text
 <outputRoot>/<runId>/
@@ -52,6 +50,11 @@ path is only the fallback for a context with no profile file at all.
   trials.jsonl      # one line per trial: the stimulus, the outcome, both folds
   README.txt        # for whoever reads the data: which field to compare
 ```
+
+**The copy in the run directory is evidence, not the thing that ran.** What gets mounted is the source
+file where it sits — so the two appear side by side, and only the source is worth editing. Runs that
+used the `tools`/`persona` shortcut have no source file at all; their `harness.json` is the compiled
+row list and *is* everything.
 
 ## Design notes worth knowing before you use it
 
@@ -90,7 +93,7 @@ Full rationale, with `file:line` evidence and the assumptions that turned out wr
 | Field | Default | Meaning |
 |---|---|---|
 | `outputRoot` | `$DSH_HOME/harness-dispatcher/runs`, i.e. `~/.dsh/…` when it is unset | Directory that receives one subdirectory per run |
-| `harnessDir` | `<profile>/harness` | Where a bare harness name resolves, and where `harness_export` writes. Inside the profile on purpose: a harness file elsewhere cannot import its own rows |
+| `harnessDir` | `$DSH_HOME/profiles/<name>/harness` | Where a bare harness name resolves, and where `harness_export` writes. Follows the profile directory, not the home: a harness file elsewhere cannot import its own rows |
 | `defaultTools` | `fs`, `fs-search`, `pwsh` | Catalogue keys the shortcut uses when it names none |
 | `defaultMaxDepth` | `1` | Delegation budget granted to a subject |
 | `maxTrials` | `10` | Upper bound on trials per call |

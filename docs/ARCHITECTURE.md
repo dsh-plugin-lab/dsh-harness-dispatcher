@@ -390,10 +390,19 @@ ownEvents()      @deprecated … new calls are prohibited
 
 **两个根，分开是设计不是巧合。** `outputRoot` 默认 `$DSH_HOME/harness-dispatcher/runs`
 （`$DSH_HOME` 未设置时即 `~/.dsh/…`），走宿主的 `dshHomePath()` —— 不是 `homedir() + '.dsh'`，
-否则一个 `$DSH_HOME` 隔离实例会把记录写进默认实例的树里。`harnessDir` 默认
-**`<profile>/harness`**：harness 文件里的裸模块名只在 profile 树或 link 包里解析得到，
-导出到别处就会产出**跑不了的文件**。所以「记录在哪」与「harness 文件在哪」不是一个问题，
-**`$DSH_HOME/harness-dispatcher/harness` 不存在** —— 那只是上下文没有 profile 文件时的兜底。
+否则一个 `$DSH_HOME` 隔离实例会把记录写进默认实例的树里。
+
+`harnessDir` 默认 **`$DSH_HOME/profiles/<name>/harness`**，但机制不是「跟着 `$DSH_HOME`」，
+而是**跟着 profile 目录**（`ctx.baseUrl` 所在目录）。宿主对 profile 的定义是
+「`$DSH_HOME/profiles/<name>` 下的一个目录」（`在跑:` `dsh-app-boot/lib/types/profile.d.ts:5`），
+而 `loadProfileDirectory` 允许**不经共享家目录**加载应用自带的 profile —— 那时 harness 文件照样跟着它。
+**`<DSH_HOME>/harness-dispatcher/harness` 不存在**，那只是上下文没有 profile 文件时的兜底。
+这么定的理由是硬的：harness 文件里的裸模块名只在 profile 树或 link 包里解析得到，
+导出到别处就会产出**跑不了的文件**。
+
+**副本与执行体不是同一个文件。** `harness.<ext>` 是逐字副本（证据），
+`mountPathFor()` 返回的是 `originPath` —— 原文件才是挂上去的那个。只有捷径（`tools`/`persona`）
+没有原文件，那时挂的正是 run 目录里的 `harness.json`。
 
 **管道全貌**（每一格的失效方式都在别处钉着）：
 

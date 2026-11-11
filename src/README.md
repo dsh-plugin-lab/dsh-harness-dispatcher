@@ -12,8 +12,9 @@
 | [attachments.ts](attachments.ts) | `resolvePrompt` / `planAttachment` / `imageDeliveryProblem` / `TaskAttachment` | `tools/harness-run`、`record` | **B27**（图片不可用必须拒；文件是路径句柄；记录只留身份）+ `attachments` 单测 |
 | [config.ts](config.ts) | `Config` / `ResolvedConfig` / `resolveConfig` | `index` | B9 + 真机（`harnessDir` 默认值决定能否挂载） |
 
-`resolveConfig` 收 `baseUrl`，把 `harnessDir` 默认到 **profile 目录内**。这不是风格：
-harness 文件的裸模块名只在那里解析得到（见 [AGENTS.md](AGENTS.md) 硬约束 3）。
+`resolveConfig` 收 `baseUrl`：`outputRoot` 走宿主的 `dshHomePath()`（认 `$DSH_HOME`），
+`harnessDir` 默认到 **profile 目录内**。这不是风格：harness 文件的裸模块名只在那里解析得到
+（见 [AGENTS.md](AGENTS.md) 硬约束 3）。两个根各自的默认值见 [../README.md](../README.md) 的配置节。
 
 ## 词汇与校验
 

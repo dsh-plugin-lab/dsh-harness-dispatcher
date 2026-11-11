@@ -1513,4 +1513,14 @@ describe('B29 — nothing is bound to one machine', () => {
     // What is not fine is a directory that exists on exactly one machine.
     expect(offenders).toEqual([])
   })
+
+  it('describes both default roots, because a reader cannot derive them from the code', () => {
+    // The docs said `harnessDir` was `~/.dsh/harness-dispatcher/harness`. It is not: that directory does
+    // not exist on a working install. The mistake survived because nothing compared the claim to the
+    // resolution — and a reader looking for their harness files was sent to an empty path.
+    const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+    expect(readme).toContain('$DSH_HOME/harness-dispatcher/runs')
+    expect(readme).toContain('$DSH_HOME/profiles/<name>/harness')
+    expect(readme).not.toContain('~/.dsh/harness-dispatcher/harness')
+  })
 })
