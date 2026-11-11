@@ -67,6 +67,13 @@ require_(
   Array.isArray(pkg.files) && published('cordis.patch.yml', pkg.files),
   'the bundle layer depends on it.',
 )
+// The skill body is read from disk at apply time, so a package that omits it registers nothing. The
+// failure is a warning in a log nobody reads, which is why it is asserted here.
+require_(
+  'files includes skills/',
+  Array.isArray(pkg.files) && published('skills/dsh-harness-bench/SKILL.md', pkg.files),
+  'the usage skill is read from skills/<name>/SKILL.md at apply time; not shipping it means the skill silently vanishes from the catalogue.',
+)
 require_(
   'LICENSE exists',
   existsSync('LICENSE'),
@@ -90,13 +97,23 @@ function published(file, files) {
   )
 }
 
-/** Only `*` (within a segment) and `**` (across segments) — enough to read `files`, no dependency. */
+/**
+ * Only `*` (within a segment) and `**` (across segments) — enough to read `files`, no dependency.
+ *
+ * The two-placeholder dance is not decoration: substituting `**` → `.*` before `*` → `[^/]*` lets the
+ * second pass eat the `.*` it just wrote (`skills/**` became `skills/.[^/]*`, which matches nothing).
+ * The bug was latent while every checked path was literal; the first directory assertion exposed it.
+ */
 function matchesGlob(file, pattern) {
   const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
   const body = escaped
-    .replace(/\*\*\//g, '(?:.*/)?')
-    .replace(/\*\*/g, '.*')
+    .replace(/\*\*\//g, '\u0000DIR\u0000')
+    .replace(/\*\*/g, '\u0000ANY\u0000')
     .replace(/\*/g, '[^/]*')
+    .split('\u0000DIR\u0000')
+    .join('(?:.*/)?')
+    .split('\u0000ANY\u0000')
+    .join('.*')
   return new RegExp(`^${body}$`).test(file)
 }
 
