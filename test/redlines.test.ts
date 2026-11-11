@@ -18,6 +18,7 @@ import { foldEvent, emptyFold, finishFold, summarize } from '../src/fold.ts'
 import { normalizeFaults } from '../src/fault.ts'
 import { harnessRows, harnessLabel, sealedRows } from '../src/harness.ts'
 import { normalizeShortcut, shortcutRows } from '../src/shortcut.ts'
+import { toolSpecOf } from '../src/tool.ts'
 import { SKILL_NAME } from '../src/skill.ts'
 import { presetIdFor } from '../src/subject.ts'
 
@@ -42,6 +43,14 @@ function sources(): Map<string, string> {
 }
 
 const DEFAULTS = { tools: ['fs'] }
+
+/** A valid stub-tool config; each test perturbs one field. */
+const SPEC = {
+  name: 'search_docs',
+  description: 'Search the documentation.',
+  parameters: { query: { type: 'string' as const, required: true } },
+  result: 'no results',
+}
 
 describe('B1 — the catalogue is the only place a row is named', () => {
   it('every default tool is a real catalogue key', () => {
@@ -754,5 +763,52 @@ describe('B19 — `sealed` promises only what the host can actually do', () => {
     const doc = readFileSync(join(ROOT, 'docs/ARCHITECTURE.md'), 'utf8')
     expect(doc).toMatch(/没有遮罩 API/)
     expect(doc).toMatch(/先到者赢/)
+    // The other route that looked promising: injecting the service to get a scope-bound registry.
+    expect(doc).toMatch(/PENDING/)
+  })
+})
+
+describe('B20 — a tool a harness defines is a tool, with a tool’s obligations', () => {
+  /**
+   * The rule: the row that stands up a tool must refuse the configs that produce a tool which exists but
+   * cannot be used. All three cases below are silent on the host side — `run_code` throws only when the
+   * registration reaches it, a malformed name registers and is never callable, an empty description is a
+   * tool the model cannot route to. A bench that measures the wrong tool set because of a typo is the
+   * "plausible empty result" this repository exists to avoid.
+   */
+  it('rejects the host’s reserved name and malformed names', () => {
+    expect(() => toolSpecOf({ ...SPEC, name: 'run_code' })).toThrow(/reserved/i)
+    for (const bad of ['has space', '1leading', '', 'a.b']) {
+      expect(() => toolSpecOf({ ...SPEC, name: bad })).toThrow(/not usable/)
+    }
+    for (const good of ['search_docs', 'fetch-page', 'read']) {
+      expect(toolSpecOf({ ...SPEC, name: good }).name).toBe(good)
+    }
+  })
+
+  it('rejects an empty description or result instead of standing up a mute tool', () => {
+    // The description is the only routing signal the model sees before calling, so an empty one is a
+    // tool that is present in the catalogue and unreachable in practice.
+    expect(() => toolSpecOf({ ...SPEC, description: '   ' })).toThrow(/description/)
+    expect(() => toolSpecOf({ ...SPEC, result: '' })).toThrow(/result/)
+  })
+
+  it('defaults to no arguments, and refuses a non-object parameter spec', () => {
+    const { parameters: _omitted, ...withoutParameters } = SPEC
+    expect(toolSpecOf(withoutParameters).parameters).toEqual({})
+    // `null` reads as "omitted", the same way an absent field does.
+    expect(toolSpecOf({ ...SPEC, parameters: null }).parameters).toEqual({})
+    for (const bad of [[], 'query', 7]) {
+      expect(() => toolSpecOf({ ...SPEC, parameters: bad })).toThrow(/parameters/)
+    }
+  })
+
+  it('leaves failure and latency to `faults`', () => {
+    // Two mechanisms for one thing is how a bench starts measuring its own patches. The row returns one
+    // literal string; `fail` and `latency` stay on the tool pipelines where they already apply to every
+    // visible tool, including this one.
+    const code = stripComments(sources().get('src/tool.ts') ?? '')
+    expect(code).not.toMatch(/\bdelay|\blatency|throw new\b(?![^\n]*ToolSpecError)/i)
+    expect(code).toContain('defineTool(')
   })
 })
