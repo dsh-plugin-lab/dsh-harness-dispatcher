@@ -998,6 +998,12 @@ describe('B27 — an attachment never degrades silently', () => {
     expect(tool).toMatch(
       /harness\.route\.provider \?\? recorded\?\.provider \?\? parent\.options\.provider/,
     )
+    // A route that cannot even be resolved must say the image is why it had to be: the adapter's own
+    // message names the provider and nothing else, so it reads as an unrelated failure. Measured on this
+    // machine — a deliberately bad route produced exactly "no adapter registered for provider X".
+    expect(tool).toMatch(
+      /cannot attach an image: route \$\{provider\}\/\$\{model\} could not be resolved/,
+    )
   })
 
   it('refuses attachments where the profile mounts no durable store', async () => {

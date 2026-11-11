@@ -481,8 +481,18 @@ async function assertImagesDeliverable(
       imageDeliveryProblem(`${provider}/${model}`, undefined) ?? 'unresolvable image route',
     )
   }
-  const info = (await llm.resolveModelInfo(provider, model)) as {
-    readonly inputModalities?: readonly string[]
+  let info: { readonly inputModalities?: readonly string[] }
+  try {
+    info = (await llm.resolveModelInfo(provider, model)) as typeof info
+  } catch (error) {
+    // The adapter's own complaint ("no adapter registered for provider X") is true but says nothing
+    // about why this call cares. Naming the attachment is the difference between "my route is wrong"
+    // and "the image is why my route suddenly has to be right".
+    throw new Error(
+      `cannot attach an image: route ${provider}/${model} could not be resolved — ` +
+        `${describe(error)}. Pass an image-capable \`provider\`/\`model\`, or drop the image.`,
+      { cause: error },
+    )
   }
   // Absent modalities mean "unknown", and unknown is not a promise: the host's own gate treats it as a
   // refusal, and so does this one.
