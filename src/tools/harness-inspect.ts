@@ -540,15 +540,14 @@ async function inspect(
   // An inspection has no run directory, so it mounts the source itself: the file the operator will
   // edit, or the compiled rows of the shortcut.
   const mountPath = resolved.captured.source === 'file' ? resolved.captured.originPath : ''
+  const denied = args.harness?.sealed === true ? hostToolNames(ctx) : []
   const subject = await mountSubject(ctx, {
     presetId: presetIdFor(deps.nextId()),
     label: harnessLabel(resolved.captured),
     // The mask goes first: a scope's own registrations are exempt, so mounting the harness after it
     // keeps the harness's tools and hides only the inherited ones.
-    rows: [
-      ...sealedRows(args.harness?.sealed === true ? hostToolNames(ctx) : []),
-      ...harnessRows(resolved.captured, mountPath),
-    ],
+    rows: [...sealedRows(denied), ...harnessRows(resolved.captured, mountPath)],
+    ...(denied.length === 0 ? {} : { denied }),
   })
   try {
     const captured = resolved.captured

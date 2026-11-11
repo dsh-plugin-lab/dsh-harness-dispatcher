@@ -193,13 +193,15 @@ export async function runBench(
   const outcomes: TrialSummary[] = []
   let stopped = false
   try {
+    const denied = request.sealed ? hostToolNames(ctx) : []
     subject = await mountSubject(ctx, {
       presetId,
       label: harnessLabel(harness.captured),
       rows: [
-        ...sealedRows(request.sealed ? hostToolNames(ctx) : []),
+        ...sealedRows(denied),
         ...harnessRows(harness.captured, mountPathFor(harness.captured, run.harnessPath)),
       ],
+      ...(denied.length === 0 ? {} : { denied }),
     })
     // Only a harness that can actually receive them may claim them in its record.
     assertFaultsReachable(faults, subject.surface.tools)

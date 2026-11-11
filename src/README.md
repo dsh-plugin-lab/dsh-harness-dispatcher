@@ -35,7 +35,7 @@
 | [sealed.ts](sealed.ts) | `apply` —— 一行 `tools.restrict`，遮掉继承来的工具 | `harness.ts` 的 `sealedRows` 生成它的行 | **B15 / B19**（只管工具；技能遮不住） |
 | [tool.ts](tool.ts) | `apply` + `toolSpecOf` —— 从行 config 长出一个模型可见工具 | 只在 harness 文件里按名字使用 | **B20** |
 | [shortcut.ts](shortcut.ts) | `normalizeShortcut` / `shortcutRows` / `shortcutLabel` | `harness` | `shortcut` 单测 |
-| [subject.ts](subject.ts) | `mountSubject` / `surfaceOf` / `hostToolNames` / `presetList` / `presetSummaries` / `rowWarnings` / `presetIdFor` | 三个工具 | **B10 / B17**（`register` 后必须读回 `.broken`；`surface` 只报能到达的）+ **B21**（列表要标默认、坏的要连原因列出）+ **B25**（挂载了但不出力的行是**警告**，不是「不能跑」） |
+| [subject.ts](subject.ts) | `mountSubject` / `surfaceOf` / `hostToolNames` / `reachableTools` / `presetList` / `presetSummaries` / `rowWarnings` / `presetIdFor` | 三个工具 | **B10 / B17**（`register` 后必须读回 `.broken`；`surface` 只报**能到达的** —— 含「封印点过名的工具，连自造的也到不了」）+ **B21**（列表要标默认、坏的要连原因列出）+ **B25**（挂载了但不出力的行是**警告**，不是「不能跑」） |
 
 `harness.ts` 是全仓最危险的文件：它同时拥有「取字节 / 算摘要 / 生成挂载行 / 决定挂哪个路径」。
 `mountPathFor` 与 `harnessRows` 的分工是**真机纠正出来的**，别再合并回去。
@@ -100,7 +100,7 @@ frontmatter 的 `name` / `description` / `author` / `metadata.source`），apply
 | 任务的附件（图 / 文件） | `attachments.ts` → [任务是输入，可以带附件](../docs/ARCHITECTURE.md#343-任务是输入可以带附件) → 红线 **B27** → `record.ts` 的 `TaskRecord.attachments` |
 | harness 的形状（行列表 / 捷径标量 / 判据三层） | [Harness 的形状](../.agents/notes/2026-11-11-harness-shape.md) 是**判据** → `harness.ts`（捕获）→ `shortcut.ts`（糖）→ `record.ts` 的 `StimulusRecord` |
 | 挂载 / 审计 / 探针的顺序 | `subject.ts` → 红线 **B10** |
-| `sealed`（工具集封闭） | `sealed.ts` + `harness.ts` 的 `sealedRows` + `subject.ts` 的 `inheritedBy` → 红线 **B15**（遮罩行必须在前）/ **B19**（不承诺遮技能） |
+| `sealed`（工具集封闭） | `sealed.ts` + `harness.ts` 的 `sealedRows` + `subject.ts` 的 `reachableTools` → 红线 **B15**（遮罩行必须在前）/ **B19**（不承诺遮技能）/ **B17**（封印点过名的工具连自造的也到不了 —— 探针必须减掉，否则它比实际多报） |
 | `surface` 报什么（能到达 vs 存在） | `subject.ts` 的 `loadableSkills` → 红线 **B17** → `tools/harness-inspect` 的那行文案 |
 | `harness_inspect` 的四种用法（列 preset+provider / 列某路由的模型 / 查 preset / 查 harness） | `subject.ts` 的 `presetList`/`presetSummaries` → `params.ts` 的 `ModelRouter` → 红线 **B21**（两个发现入口必须分开：`listProviders()` 同步读注册表，`listModels()` 异步由适配器决定）→ `tools/harness-inspect` 的输出 schema 与四个渲染分支 |
 | skill 正文 | [../skills/dsh-harness-dispatcher/SKILL.md](../skills/dsh-harness-dispatcher/SKILL.md) → 红线 **B22**（上限 + 事实清单 + 缺文件/空正文要响亮）→ `check:release` 断言它随包发布 → 改完真机确认它仍在技能目录里 |

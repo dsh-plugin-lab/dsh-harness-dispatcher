@@ -28,7 +28,7 @@ import { contentBlocksOf } from '../src/text.ts'
 import { modelLines } from '../src/tools/harness-inspect.ts'
 import { ATTACHMENTS_PARAMETER } from '../src/tools/params.ts'
 import { summaryLine } from '../src/run.ts'
-import { presetIdFor, presetSummaries, rowWarnings } from '../src/subject.ts'
+import { presetIdFor, presetSummaries, reachableTools, rowWarnings } from '../src/subject.ts'
 import { toolSpecOf } from '../src/tool.ts'
 import { stoppedByBudget } from '../src/trial.ts'
 
@@ -742,6 +742,31 @@ describe('B17 — the surface reports what the subject can reach, not what the r
     expect(subject).toMatch(/tools\.includes\(SKILL_TOOL\)/)
     // A skill the model may not invoke is not reachable either; the `skill` tool refuses it.
     expect(subject).toMatch(/invocation\.modelInvocable/)
+  })
+
+  it('subtracts what the mask removed, because admission filters harder than the scope view', () => {
+    /**
+     * The same judgement, a second shape. Measured 2026-11-11 on `0.2.2-rc.1`: a sealed harness whose own
+     * row registered `harness_inspect` — a name this host also exports globally, so a name in the mask's
+     * deny list — reported three callable tools and delivered two. `tools.definitions(scope)` kept
+     * listing the shadowed name; the request carried no such schema, and the subject said so.
+     *
+     * The rule is unchanged and that is exactly why the assertion is behavioural: a restriction removes a
+     * NAME, so the harness re-registering it changes nothing. `reachableTools` is where the probe stops
+     * disagreeing with the request.
+     */
+    expect(reachableTools(['harness_inspect', 'read', 'zz_unique'], ['harness_inspect'])).toEqual([
+      'read',
+      'zz_unique',
+    ])
+    // Not sealed: nothing is subtracted, and a harness may shadow any host name it likes.
+    expect(reachableTools(['read', 'zz_unique'], [])).toEqual(['read', 'zz_unique'])
+    // Both callers pass the same list that built the masking row, so `run.json` and the probe agree.
+    for (const file of ['src/run.ts', 'src/tools/harness-inspect.ts']) {
+      expect(sources().get(file) ?? '', `${file} mounts a mask without reporting it`).toMatch(
+        /denied\.length === 0 \? \{\} : \{ denied \}/,
+      )
+    }
   })
 
   it('keeps three outcomes distinguishable: no registry, nothing loadable, a list', () => {

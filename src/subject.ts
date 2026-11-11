@@ -67,6 +67,36 @@ export interface SubjectPlan {
   /** Display name, e.g. `minus-web.yml`. */
   readonly label: string
   readonly rows: readonly HarnessRow[]
+  /**
+   * Tool names the masking row removed, when the caller mounted one.
+   *
+   * The scope view and step admission disagree about these, and admission wins: a restriction removes a
+   * name whether it resolves to the host's definition or to one the harness registered itself. Passing
+   * the same list that built the masking row is what keeps {@link CapabilitySurface.tools} honest.
+   */
+  readonly denied?: readonly string[]
+}
+
+/**
+ * The names a subject can actually call, given what the masking row removed.
+ *
+ * Measured 2026-11-11 on `0.2.2-rc.1`: sealing a harness whose own row registers `harness_inspect` — a
+ * name the host also exports globally, and therefore a name in the deny list — leaves
+ * `tools.definitions(scope)` reporting that tool while the request carries no such schema and the subject
+ * cannot call it. Filtering here is what makes the probe agree with the request.
+ *
+ * Pure, so the disagreement is testable without a host.
+ * @param tools - names visible in the subject's scope, before admission.
+ * @param denied - names the masking row removed; empty when the harness is not sealed.
+ * @returns the same names, minus the denied ones, in the order given.
+ */
+export function reachableTools(
+  tools: readonly string[],
+  denied: readonly string[],
+): readonly string[] {
+  if (denied.length === 0) return [...tools]
+  const blocked = new Set(denied)
+  return tools.filter((name) => !blocked.has(name))
 }
 
 /**
@@ -202,7 +232,13 @@ export async function mountSubject(ctx: Context, plan: SubjectPlan): Promise<Sub
         `this harness cannot be mounted, so no trial can run:\n${health.broken}`,
       )
     }
-    const surface = await surfaceOf(ctx, plan.presetId)
+    const observed = await surfaceOf(ctx, plan.presetId)
+    // Admission filters once more than the scope view does, and only for names the mask removed.
+    const surface: CapabilitySurface = {
+      rows: observed.rows,
+      tools: reachableTools(observed.tools, plan.denied ?? []),
+      skills: observed.skills,
+    }
     assertUsable(surface)
     return { presetId: plan.presetId, surface, dispose: unregister }
   } catch (error) {
