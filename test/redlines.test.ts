@@ -1203,25 +1203,28 @@ describe('B22 — the skill is one page, and it says everything once', () => {
    */
   const body = readFileSync(join(ROOT, 'skills', SKILL_NAME, 'SKILL.md'), 'utf8')
 
-  it('stays under the host prune threshold with room to spare', () => {
+  it('stays under the host prune threshold, and carries the idea rather than an outline', () => {
     // Above 8192 the standard preset's tool-result pruner trims the body mid-sentence.
     expect(body.length).toBeLessThan(8192)
-    // And not by being terse to the point of losing facts: every section below must be present.
-    for (const heading of [
-      '# Benchmarking a harness',
-      '## The loop',
-      '## Shaping the subject',
-      '## What the records say',
-      '## Do not',
+    /**
+     * Deliberately not an outline check. Pinning section titles meant any reorganisation broke the test
+     * while proving nothing — a skill can keep every heading and lose the point. What a reader has to come
+     * away with is *why this is testable*, and that is three sentences.
+     */
+    for (const idea of [
+      /harness is text/i, // varying the assembly is a file edit — the reason it can be an experiment
+      /every trial is a model call/i, // so the free steps come first and the expensive one is deliberate
+      /record is the deliverable/i, // not a score: analysis changes, the raw layer must outlive it
+      /judges nothing/i, // the verdict belongs to the reader
     ]) {
-      expect(body, `the skill lost "${heading}"`).toContain(heading)
+      expect(body, `the skill no longer says ${String(idea)}`).toMatch(idea)
     }
   })
 
   it('keeps every fact that costs an experiment when missed', () => {
     for (const fact of [
       /no arguments/, // discovery comes first: without an id nothing else works
-      /declare `image`\s+input/, // the route listing exists so an image can be aimed at a model that takes one
+      /`image`\s+\n?\s*input/, // the route must declare it, or the image is swapped for a placeholder
       /CATALOGUE KEYS/,
       /MODEL-FACING TOOL NAMES/,
       /fingerprint/,
@@ -1229,7 +1232,7 @@ describe('B22 — the skill is one page, and it says everything once', () => {
       /cannot mask/, // skills: the one thing sealing does not cover
       /dsh-harness-dispatcher\/tool/, // a tool can be defined or replaced in the file
       /\.\/mine\.js/, // a row may name a path: your own code is a harness variable too
-      /fingerprint covers the row list, not the file/, // so editing that file is invisible to it
+      /not\*\* the package or file/, // so editing that file is invisible to the fingerprint
       /byte-identical/, // the task is the controlled variable
       /credentials/,
       /replaces/, // persona is a swap, not an addition — length says nothing

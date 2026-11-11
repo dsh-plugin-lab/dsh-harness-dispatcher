@@ -5,7 +5,9 @@
 <h1 align="center">dsh-harness-dispatcher</h1>
 
 <div align="center">
-  <p><em>Score the harness, not the model. <code>Model + Harness = Agent</code></em></p>
+  <p><em>The assembly is the variable. The record is the deliverable.</em></p>
+
+  <p>Model + Harness = Agent</p>
 
   <p>
     <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat&logo=deepseek&logoColor=white" alt="powered by dsh"></a>
@@ -23,35 +25,79 @@
 
 ---
 
-An agent's behaviour is a property of what it is **assembled** with — system prompt, tool set, model
-route — at least as much as of its model. This plugin makes that assembly a controlled variable: one
-fixed task, one harness at a time, one JSONL line per trial.
+An agent behaves the way it is **assembled** — prompt sections, tools, skills, middleware, model route —
+at least as much as it behaves the way its model does. Normally that makes those choices a matter of
+opinion, because changing one and noticing the difference is guesswork.
 
-It computes no statistics. Means, intervals and significance belong to R or Python, outside this
-repository, because the definition of an analysis changes and the records must stay recomputable under a
-different one.
+This plugin makes the assembly a file. Write it down, run one fixed task against two variants, and keep
+the record of what each one actually did.
 
-## What it offers
+## What you can find out
 
-- **Three tools forming one zero-cost loop.** `harness_inspect` mounts, audits and probes without
-  starting an agent or spending a token; `harness_export` writes a preset's rows out as a runnable file;
-  `harness_run` runs the task and leaves a self-sufficient record directory behind.
-- **Discovery before anything else.** `harness_inspect` with no arguments lists the presets **and** the
-  model routes this host has, both read from local registries. `provider` alone then names one route's
-  models — the single read that costs an adapter call, and the way to find out which models declare
-  `image` input before attaching one.
-- **A fault gate** — inject `deny` / `fail` / `latency` into named tools, for the subject only, with no
-  change to any other agent.
-- **The host's own numbers, exported** (`host`) — whatever the host registered among a fixed list of
-  projection keys, copied back unchanged. Adding a host projection is one string in that list.
-- **Two views this plugin folds**: what the subject *was given* (`modelInput`, the evidence that two
-  runs applied the same harness) and the three counts no projection offers (`trace`).
-- **The subject's answer, whole** (`output`), never a prefix: a cut cannot be recomputed, and the raw
-  layer below it is already larger by an order of magnitude.
-- **The subject's raw event log** (`events.jsonl`, on by default) — so a record can be re-folded under
-  a definition this plugin never had.
-- **A skill registered by the plugin** (`dsh-harness-dispatcher`, same name as the package) carrying
-  the loop and the traps that each cost an experiment, so an agent finds them without reading source.
+- **Whether the wording earns its tokens.** A harness row that reuses a shipped tool's name **replaces**
+  that tool for the subject alone, description and parameters included. "Does this description matter?"
+  becomes one edit and two runs.
+- **Whether the tool set matters at all.** `sealed: true` makes the harness the whole tool set; leave it
+  off and the subject also inherits everything the host mounts, which is a different question. A harness
+  stripped to a single tool answers the same task in a very different number of calls.
+- **What your own code does.** Any row can point at a package, a subpath, or a path — `./mine.js` beside
+  the harness file, or a `file:///` URL — so a prompt section, a middleware or a tool set you write is as
+  much a variable as a shipped one.
+- **What breaks.** `deny` / `fail` / `latency` injected into named tools, for the subject only: absence,
+  recovery, patience, as three separate experiments.
+- **Whether a difference is real.** N trials per variant, and a fingerprint that says whether the two
+  variants were actually different things.
+
+## How it works
+
+| Step | Tool | Cost |
+|---|---|---|
+| List the presets and model routes this host has; find which models take images | `harness_inspect` — no arguments, or `provider` alone | free · one adapter call |
+| Mount, audit, report what the subject could call | `harness_inspect` with `preset` or `harness` | free |
+| Write a working row list out to edit | `harness_export` | free |
+| Run one task against it, one or many trials | `harness_run`, optionally in the background | **one model call per trial** |
+
+The three free steps are the same resolution the run uses, so an inspection's verdict is the run's
+verdict. That is what makes "write it wrong, find out, fix it" cheap enough to do first.
+
+## What the record holds
+
+One run is a self-sufficient directory:
+
+```text
+<outputRoot>/<runId>/
+  run.json          # run identity, task, stimulus fingerprint, probed capability surface
+  harness.<ext>     # verbatim copy of the harness under test (harness.json for the shortcut)
+  trials.jsonl      # one line per trial
+  events.jsonl      # the subject's committed Session events, verbatim
+  README.txt        # for whoever reads the data: which field to compare
+```
+
+Inside a trial line, three layers, and the split is the point:
+
+- **`host`** — what the host already computed (timing, token buckets, context pressure, policy, delegation),
+  copied back unchanged. A second set of totals would be a second set of definitions.
+- **`modelInput` + `trace`** — what the subject was *given*, and the three counts no host projection
+  offers. This is the evidence that two runs applied the same assembly.
+- **`events.jsonl`** — the subject's committed events, verbatim, on by default. It is what lets a record be
+  re-folded under an analysis this plugin never anticipated, which is why the plugin computes no statistics:
+  means, intervals and significance belong to R or Python, outside this repository.
+
+**The copy is evidence, not the thing that ran** — the source file is what gets mounted, because a row's
+bare module names only resolve inside a profile tree. And `events.jsonl` holds prompts and model output as
+the subject saw them: redact before sharing.
+
+## Where it stops
+
+- **The fingerprint covers the declaration, not the behaviour.** It hashes the row list, the route and the
+  delegation depth. Edit the file a row points at, or let a `!!js` row condition resolve differently, and
+  two runs still carry one fingerprint. `modelInput` is what the subject actually received; where the two
+  disagree, believe `modelInput`.
+- **Skills cannot be masked, only starved.** They reach a subject only through a `skill` tool, so sealing,
+  which removes the host's, cuts the channel — but a harness that mounts `tool-skill` itself keeps that row
+  and the inherited catalogue follows. `harness_inspect` reports what is actually loadable.
+- **A masked name is masked by name.** Under `sealed`, a row that reuses a host tool's name is hidden along
+  with it. The probe reports the surviving names; read it rather than assuming a replacement is there.
 
 ## Install
 
@@ -92,20 +138,6 @@ silently broken code, is in
 user data, while a harness file's bare row names only resolve inside a profile tree, so exporting one
 anywhere else produces a file that cannot run.
 
-## The record
-
-```text
-<outputRoot>/<runId>/
-  run.json          # run identity, task, stimulus identity, probed capability surface
-  harness.<ext>     # verbatim copy of the harness under test (harness.json for the shortcut)
-  trials.jsonl      # one line per trial: the stimulus, the outcome, the host's numbers, our two views
-  events.jsonl      # the subject's committed Session events, verbatim
-  README.txt        # for whoever reads the data: which field to compare
-```
-
-**The copy is evidence, not the thing that ran** — the source file is what gets mounted. And
-`events.jsonl` holds prompts and model output as the subject saw them; redact before sharing.
-
 ## Development
 
 ```shell
@@ -123,26 +155,18 @@ has and has not been verified is in [AGENTS.md](AGENTS.md).
 
 ## Before you run
 
-Advice that changes the experiment, not rationale. The reasoning — why the record is shaped this way,
-what was tried and rejected — is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Advice that changes the experiment. The reasoning — why the record is shaped this way, what was tried and
+rejected — is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-- **Inspect before you run.** It is free, and it is the same resolution `harness_run` uses: whatever
-  the inspection says about a harness, the run applies exactly that.
+- **Inspect before you run.** Free, and the same resolution `harness_run` uses: whatever the inspection
+  says about a harness, the run applies exactly that.
 - **Discover two things for free, one thing for an adapter call.** The bare `harness_inspect` is local;
   asking for a route's models is not, because only the adapter knows whether answering means asking its
-  endpoint. Ask it anyway before attaching an image — it is the only place that says which models take
-  one.
-- **A harness is a delta unless you seal it.** Mounted as a preset it sits inside the host, so by
-  default the subject also inherits every tool the host mounts for itself. `sealed: true` masks those.
-  Use it whenever the tool set is the variable; leave it off when the question is "does this harness
-  work in *this* deployment".
-- **Skills are switched off by withholding the `skill` tool, not by masking.** A harness that mounts
-  `tool-skill` itself keeps that row, and the inherited catalogue then reaches the subject with no API
-  able to stop it. `harness_inspect` reports what the subject can actually load.
+  endpoint. Ask it anyway before attaching an image — it is the only place that says which models take one.
 - **`deny`, `fail` and `latency` are three different experiments**, not three settings of one: absence,
   recovery, patience.
-- **Compare by `stimulus.fingerprint`, never by file name.** It covers the harness content, the route
-  and the delegation depth.
+- **One variable at a time.** Assembly, route, fault, attachment, delegation depth. The task stays fixed;
+  that is the whole point.
 
 ## License
 
