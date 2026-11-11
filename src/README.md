@@ -55,14 +55,19 @@ harness 文件的裸模块名只在那里解析得到（见 [AGENTS.md](AGENTS.m
 | 文件 | 导出 | 说明 |
 |---|---|---|
 | [index.ts](index.ts) | `name` / `inject` / `apply` | 唯一装配点：三个工具 + skill + 提示段 |
-| [skill.ts](skill.ts) | `SKILL_NAME` / `readSkillBody` / `registerSkill` | 代码注册的 skill；正文是 [../skills/dsh-harness-bench/SKILL.md](../skills/dsh-harness-bench/SKILL.md)，`skills` 服务**可选**，注册挂 `ctx.effect`（**B18**） |
+| [skill.ts](skill.ts) | `SKILL_NAME` / `readSkill` / `splitFrontmatter` / `registerSkill` | 代码注册的 skill；正文 + 元信息是 [../skills/dsh-harness-bench/SKILL.md](../skills/dsh-harness-bench/SKILL.md)，`skills` 服务**可选**，注册挂 `ctx.effect`（**B18**） |
 
 `skill.ts` 用代码注册而不是文件目录：文件式 skill 在没把 `customSkillDirs` 指过去的 preset 里
-**不可见且不报错**，是个死指针。但**正文是文件**（`skills/<name>/SKILL.md`），apply 时读盘：
-散文该由人审、该能直接 diff，不该是打包器输入里的一个模板字符串。改正文不用重新编译。
-代价是三条必须自己守的纪律，都有断言：文件要随包发布（`check:release`）、正文为空要**响亮失败**
-（宿主不校验 `content`，空的会在目录里出现、加载时渲染成空）、路径按**产物位置**推算
-（`src/` 与 `lib/` 都在包根下一级，所以 `../skills` 两种布局同一个式子）。
+**不可见且不报错**，是个死指针。但**正文是文件**，而且是一个**合法的 skill 文件**（带 YAML
+frontmatter 的 `name` / `description` / `author` / `metadata.source`），apply 时读盘并剥掉 frontmatter：
+
+- 元信息只有一个 home：文件。改描述不用碰代码，也不会两边不一致。
+- 文件因此能被 `dsh-skill-filesystem` 直接读 —— 若哪天有人把 `skills/` 挂给文件系统 provider，它仍然成立。
+  只放正文的片段看起来一样，但会被那个 provider 丢掉，是个「像伪劣品的成品」。
+
+代价是三条必须自己守的纪律，都有断言：文件随包发布（`check:release`）、正文与 frontmatter 坏掉要
+**响亮失败**（宿主只校验 `name`/`description`/`invocation`，空的会在目录里出现、加载时渲染成空）、
+路径按**产物位置**推算（`src/` 与 `lib/` 都在包根下一级，所以 `../skills` 两种布局同一个式子）。
 注册必须挂在 fiber 上：宿主把 disposer 记在**它自己**的 ctx 上，丢掉返回值就会在卸载后残留 ——
 热重载之后改了正文仍然是旧的那一份，而且不报错。
 

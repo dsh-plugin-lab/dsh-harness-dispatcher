@@ -5,9 +5,15 @@
 这个目录里的 `.md` **不是文档**，是运行时载荷 —— 它在 `apply()` 时被
 [../src/skill.ts](../src/skill.ts) 读走交给宿主技能注册表。所以：
 
-- **目录名就是技能名**，且必须 kebab-case（`dsh-harness-bench`）。宿主按目录名找正文，改名等于换技能。
+- **目录名就是技能名**，且必须 kebab-case（`dsh-harness-bench`）。宿主按目录名找正文，改名等于换技能；
+  而 frontmatter 里的 `name` 必须**与目录名同一串**，[../src/skill.ts](../src/skill.ts) 会拒掉不一致的。
+- **frontmatter 不是装饰，是文件合法的一部分**：`name`、`description` 必填，`author` /
+  `metadata.source` 跟着兄弟仓的约定补齐。少了它们，代码注册照样能跑（它自己剥），但文件就不再是
+  合法 skill 文件 —— `dsh-skill-filesystem` 会因为缺 frontmatter 直接**忽略**它并只记一条 warn。
+- **`description` 必须是单行标量**，且含 `: ` 时要加引号。写成 `>-` 会注册成一个连字符，
+  而它是模型唯一的路径信号 —— 技能还在目录里，但不可达，任何一侧都不报错。
 - **改它不需要重新编译**，但需要重载插件才生效；载体是 `ctx.effect` 收住的注册，重载会撤掉旧的。
-- **删它不会让插件崩**：`readSkillBody()` 会抛，`registerSkill()` 捕获后记一条 warn，工具半边照常工作。
+- **删它不会让插件崩**：`readSkill()` 会抛，`registerSkill()` 捕获后记一条 warn，工具半边照常工作。
   所以「技能静默消失」只能靠 [../scripts/check-release.mjs](../scripts/check-release.mjs) 拦，
   那条断言就是这个用途。
 - **正文不许为空**。宿主不校验 `content`，空的会长在目录里、加载时渲染成空 —— 没有任何一侧报错。
