@@ -30,7 +30,7 @@ export type TrialStopReason = 'completed' | 'aborted' | 'error' | 'max-tokens' |
 
 /** The stimulus one trial was run under, at the identity level. */
 export interface StimulusRecord {
-  /** Machine identity of the stimulus: harness digest + route + depth. Faults are outside it. */
+  /** Machine identity of the stimulus: harness digest + route + depth + sealed. Faults are outside it. */
   readonly fingerprint: string
   readonly harness: {
     readonly source: CapturedHarness['source']
@@ -43,6 +43,15 @@ export interface StimulusRecord {
   }
   readonly route: { readonly provider: string; readonly model: string } | null
   readonly maxDepth: number
+  /**
+   * Whether the harness replaced the host's tool set or added to it.
+   *
+   * Present beside {@link StimulusRecord.fingerprint} for the same reason `maxDepth` is: the fingerprint
+   * is what a script groups by, and this is what a person reads. A sealed subject had 4 tools where the
+   * unsealed one had 41 (measured 2026-11-11), so a record that did not say which was which would be
+   * describable only by decoding a hash.
+   */
+  readonly sealed: boolean
   readonly faults: readonly Fault[]
 }
 
@@ -183,9 +192,12 @@ export interface RunHandle {
  * **5 replaced this plugin's own turn, step and token totals with the host's projections (`host`) and
  * cut `trace` to the three counts no projection offers** — a 4 file's `trace.turns` counts `turn/end`
  * events, while `host.sessionStats.turns` counts turns carrying a closed step, so the two disagree on
- * exactly the runs a reader would compare.
+ * exactly the runs a reader would compare. **6 put `sealed` into the stimulus identity**, because the
+ * fingerprint had been hashing the harness bytes, the route and the depth while omitting a
+ * request-level switch that changes the subject's tool set from 4 tools to 41 — so a 5 file's
+ * fingerprint can say "same stimulus" about two runs that are not.
  */
-const RECORD_SCHEMA = 5
+const RECORD_SCHEMA = 6
 
 /** The note a reader finds first. Short on purpose: it answers "which field do I compare?" */
 const README = `This directory is one benchmark run.
@@ -201,8 +213,9 @@ const README = `This directory is one benchmark run.
 
 How to read it
   1. Compare runs by stimulus.fingerprint, never by file names. Two runs with the
-     same fingerprint applied the same harness on the same route; two with different
-     fingerprints did not, whatever their file names say.
+     same fingerprint applied the same harness on the same route, at the same depth,
+     sealed the same way; two with different fingerprints did not, whatever their file
+     names say. stimulus.sealed says the same thing in words.
   2. host says what the HOST computed (timing, tokens, context pressure, policy,
      compaction-adjacent counters) and is copied from its projections unchanged.
      modelInput says what the subject WAS GIVEN.  trace says what it DID, and holds
@@ -334,6 +347,7 @@ export function stimulusRecord(harness: ResolvedHarness, faults: readonly Fault[
         ? null
         : { provider: harness.route.provider, model: harness.route.model },
     maxDepth: harness.maxDepth,
+    sealed: harness.sealed,
     faults,
   }
 }

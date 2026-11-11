@@ -9,7 +9,9 @@
  * dialect, and a second parser here would be a second definition of "a harness".
  *
  * `agentOptions` and `maxDepth` cannot be written into a row list, so they sit beside the harness —
- * which is what lets one file run under two routes. {@link ResolvedHarness.fingerprint} covers both.
+ * which is what lets one file run under two routes. `sealed` is beside them for the same reason: it
+ * says how much of the host the harness replaces, not which harness it is, and one file can be run
+ * both ways. {@link ResolvedHarness.fingerprint} covers all three.
  *
  * @module dsh-harness-dispatcher/harness
  */
@@ -72,12 +74,23 @@ export type CapturedHarness =
  *
  * Exactly one form: a `file`, or the shortcut's scalars. Passing both, or neither, is an error — two
  * ways to say what the subject is assembled from is how two variables get changed at once.
+ *
+ * `sealed` is not one of those forms: it says how much of the *host* the harness replaces, not which
+ * harness it is, so it sits beside them and can be combined with either.
  */
 export interface HarnessSelection {
   readonly file?: string | undefined
   readonly tools?: readonly string[] | undefined
   readonly persona?: PersonaVariant | undefined
   readonly personaText?: string | undefined
+  /**
+   * Make the harness the whole tool set instead of a delta on the host.
+   *
+   * Part of the stimulus, not a rendering preference: unsealed, the subject also inherits every tool
+   * the host mounts, which on this machine was 41 tools against a sealed 4. Measured 2026-11-11 —
+   * leaving it out of the fingerprint let those two runs share one identity.
+   */
+  readonly sealed?: boolean | undefined
 }
 
 /** One harness under test, as a caller may pass it. */
@@ -115,12 +128,18 @@ export interface ResolvedHarness {
   readonly captured: CapturedHarness
   readonly route: Route
   readonly maxDepth: number
+  /** Whether the mask row is part of this stimulus; see {@link HarnessSelection.sealed}. */
+  readonly sealed: boolean
   /**
-   * Machine identity of the *stimulus*: harness digest + route + depth.
+   * Machine identity of the *stimulus*: harness digest + route + depth + sealed.
    *
    * Two records with the same fingerprint describe the same harness applied the same way. Faults and
    * the task are deliberately outside it — they are independent variables, so "same harness under a
    * different fault" must still look like one harness.
+   *
+   * `sealed` is **inside** it, and that is a correction rather than an original decision: it is a
+   * request-level switch in exactly the same sense as the route and the depth, and omitting it made a
+   * 4-tool subject and a 41-tool subject share one identity (measured 2026-11-11, redline B32).
    */
   readonly fingerprint: string
 }
@@ -194,12 +213,14 @@ export async function resolveHarness(
   const captured = await captureHarness(input.harness, deps)
   const route = resolveRoute(input)
   const maxDepth = resolveMaxDepth(input.maxDepth, deps.defaults.maxDepth)
+  const sealed = input.harness.sealed === true
   const fingerprint = digestText(
     `harness=${captured.digest}` +
       `|route=${route.provider ?? '-'}/${route.model ?? '-'}` +
-      `|maxDepth=${String(maxDepth)}`,
+      `|maxDepth=${String(maxDepth)}` +
+      `|sealed=${String(sealed)}`,
   )
-  return { captured, route, maxDepth, fingerprint }
+  return { captured, route, maxDepth, sealed, fingerprint }
 }
 
 async function captureHarness(
@@ -207,6 +228,9 @@ async function captureHarness(
   deps: ResolveDeps,
 ): Promise<CapturedHarness> {
   const hasFile = selection.file !== undefined
+  // `sealed` is deliberately not one of these: it says how much of the host the harness replaces, not
+  // which harness it is. Counting it would make `{ sealed: true }` alone look like a shortcut and mount
+  // a harness nobody named.
   const hasShortcut =
     selection.tools !== undefined ||
     selection.persona !== undefined ||

@@ -58,9 +58,10 @@ Three consequences, and everything below is one of them:
 ## What must not move
 
 - **The task.** Same `task_id` and a byte-identical prompt across variants, or two variables moved at once.
-- **One axis at a time.** Assembly, route, fault, attachment, delegation depth — `stimulus.fingerprint`
-  covers the harness text, the route and the depth, so two runs of different fingerprints are not
-  comparable. Varying the route also makes an attached image a route question; an image pins the route.
+- **One axis at a time.** Assembly, route, fault, attachment, delegation depth, `sealed` —
+  `stimulus.fingerprint` covers the harness text, the route, the depth and whether it was sealed, so two
+  runs of different fingerprints are not comparable. Varying the route also makes an attached image a
+  route question; an image pins the route.
 - **The declaration is not the behaviour.** The fingerprint covers the row list, **not** the package or file
   a row points at, and not what a `!!js` row condition resolves to on the day. `modelInput` is what the
   subject actually received, so compare it too before calling two runs the same stimulus. Where the two

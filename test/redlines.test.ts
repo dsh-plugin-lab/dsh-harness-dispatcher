@@ -20,11 +20,12 @@ import { resolveConfig } from '../src/config.ts'
 import { imageDeliveryProblem, resolvePrompt } from '../src/attachments.ts'
 import { emptyFold, finishFold, foldEvent, summarize } from '../src/fold.ts'
 import { normalizeFaults } from '../src/fault.ts'
-import { harnessRows, harnessLabel, sealedRows } from '../src/harness.ts'
+import { harnessRows, harnessLabel, resolveHarness, sealedRows } from '../src/harness.ts'
 import { jobOutcomeOf } from '../src/jobs.ts'
 import { normalizeShortcut, shortcutRows } from '../src/shortcut.ts'
 import { SKILL_NAME, readSkill, registerSkill, splitFrontmatter } from '../src/skill.ts'
 import { contentBlocksOf } from '../src/text.ts'
+import { stimulusRecord } from '../src/record.ts'
 import { modelLines } from '../src/tools/harness-inspect.ts'
 import { ATTACHMENTS_PARAMETER } from '../src/tools/params.ts'
 import { summaryLine } from '../src/run.ts'
@@ -53,6 +54,16 @@ function sources(): Map<string, string> {
 }
 
 const DEFAULTS = { tools: ['fs'] }
+
+/**
+ * Resolve dependencies for the red lines that go through `resolveHarness`.
+ *
+ * A shortcut harness needs no file, so `harnessDir` only has to be a path — nothing is read from it.
+ */
+const RESOLVE_DEPS = {
+  defaults: { tools: ['fs'], maxDepth: 1, harnessDir: join(ROOT, 'test-harness-fixtures') },
+  vocabulary: CATALOG,
+}
 
 /** A configuration with both path fields blank, so `resolveConfig` has to compute them. */
 const BLANK_CONFIG = {
@@ -1694,5 +1705,40 @@ describe('B30 — what the host already computed is copied, not recomputed', () 
     const tool = stripComments(sources().get('src/tools/harness-run.ts') ?? '')
     // Default on, and the default is spelled out rather than left to a schema default.
     expect(tool).toContain('args.record_events ?? true')
+  })
+})
+
+describe('B32 — the stimulus identity covers every switch that changes what the subject receives', () => {
+  /**
+   * The rule: `fingerprint` is the field a reader groups runs by, so anything request-level that changes
+   * the subject's inputs has to be in it. `route` and `maxDepth` always were; `sealed` was not.
+   *
+   * Measured on this machine 2026-11-11: the same `minimal.yml`, sealed and unsealed, both printed
+   * `fingerprint 870c1e4f` — while the capability surface was **4 tools** sealed against **41 tools**
+   * unsealed. A reader following the shipped instructions ("compare runs by `stimulus.fingerprint`")
+   * would have concluded the two were the same stimulus, which is exactly the class of quiet wrongness
+   * this repository exists to prevent.
+   */
+
+  it('changes the fingerprint when only `sealed` changes', async () => {
+    // The shortcut form compiles to the same rows either way, so the harness bytes are provably
+    // identical and `sealed` is the only variable in the two calls.
+    const resolve = (sealed: boolean) =>
+      resolveHarness({ harness: { tools: ['fs'], sealed } }, RESOLVE_DEPS)
+    const sealed = await resolve(true)
+    const unsealed = await resolve(false)
+    // Same bytes on disk: the harness identity itself must not move.
+    expect(sealed.captured.digest).toBe(unsealed.captured.digest)
+    // The stimulus identity must.
+    expect(sealed.fingerprint).not.toBe(unsealed.fingerprint)
+  })
+
+  it('records the flag beside the fingerprint, so a person need not decode a hash', async () => {
+    const sealed = await resolveHarness({ harness: { tools: ['fs'], sealed: true } }, RESOLVE_DEPS)
+    const record = stimulusRecord(sealed, [])
+    expect(record.sealed).toBe(true)
+    // Both values the fingerprint hashes are also fields, so the two cannot disagree.
+    expect(record.maxDepth).toBe(sealed.maxDepth)
+    expect(record.fingerprint).toBe(sealed.fingerprint)
   })
 })

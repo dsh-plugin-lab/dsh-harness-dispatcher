@@ -53,7 +53,8 @@ export const HARNESS_PROPERTIES = {
     description:
       'Make the harness the whole tool set instead of a delta on the host. Without it the subject ' +
       'also sees every tool the host mounts for itself, which is usually not what an experiment ' +
-      'wants to hold constant.',
+      'wants to hold constant. Part of the stimulus: it changes the fingerprint, because a sealed ' +
+      'subject and an unsealed one are different experiments.',
   },
 } as const satisfies ParameterSchemaSpec
 
@@ -202,6 +203,9 @@ export function harnessInputOf(args: HarnessArgs): HarnessInput {
       ? {}
       : { persona: args.harness.persona as PersonaVariant }),
     ...(args.harness?.persona_text === undefined ? {} : { personaText: args.harness.persona_text }),
+    // Carried here rather than read again at each tool: one read means the mask a run mounts and the
+    // mask its fingerprint claims cannot disagree (redline B32).
+    ...(args.harness?.sealed === undefined ? {} : { sealed: args.harness.sealed }),
   }
   return {
     harness: selection,

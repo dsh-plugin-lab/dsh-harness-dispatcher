@@ -73,8 +73,8 @@ export function registerHarnessExport(ctx: Context, deps: HarnessExportDeps): vo
             text:
               `wrote ${String(value.bytes)} bytes → ${value.path}\n` +
               // Named as the *file's* digest: it is a hash of the bytes, while the number an
-              // inspection and a record show is the fingerprint (bytes + route + depth). Two 8-hex
-              // values that mean different things must not both be called "the digest".
+              // inspection and a record show is the fingerprint (bytes + route + depth + sealed). Two
+              // 8-hex values that mean different things must not both be called "the digest".
               `file digest ${value.digest}. Edit it, then call harness_inspect with ` +
               `harness: { file: "${value.path}" }; its fingerprint is what records are compared by.`,
           },

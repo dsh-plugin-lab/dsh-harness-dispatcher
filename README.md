@@ -89,10 +89,10 @@ the subject saw them: redact before sharing.
 
 ## Where it stops
 
-- **The fingerprint covers the declaration, not the behaviour.** It hashes the row list, the route and the
-  delegation depth. Edit the file a row points at, or let a `!!js` row condition resolve differently, and
-  two runs still carry one fingerprint. `modelInput` is what the subject actually received; where the two
-  disagree, believe `modelInput`.
+- **The fingerprint covers the declaration, not the behaviour.** It hashes the row list, the route, the
+  delegation depth and whether the harness was `sealed`. Edit the file a row points at, or let a `!!js`
+  row condition resolve differently, and two runs still carry one fingerprint. `modelInput` is what the
+  subject actually received; where the two disagree, believe `modelInput`.
 - **Skills cannot be masked, only starved.** They reach a subject only through a `skill` tool, so sealing,
   which removes the host's, cuts the channel — but a harness that mounts `tool-skill` itself keeps that row
   and the inherited catalogue follows. `harness_inspect` reports what is actually loadable.
