@@ -37,11 +37,15 @@ index.ts ─→ tools/ ─→ run / harness / shortcut / subject / trial / recor
 7. **注册给宿主的每一样东西都挂在 fiber 上。** `ctx.effect(() => svc.register(...))`。
    宿主把 disposer 记在**它自己**的 ctx 上，丢掉返回值 = 卸载后残留、热重载后旧值继续赢。（**B18**）
 8. **`finally` 里必须 dispose。** 临时 preset、故障门、探针租约，一个都不许留。
-   （红线 **B6**：一次没跑到 trial 1 的 run 必须被 `discard()`）
+   （红线 **B6**：一次没记录到任何 trial 的 run 必须被 `discard()` —— 判据是"有没有记录"，
+   不是"进没进循环"，两者差一个 trial，而那个差就是一次喊停留下的空目录）
 9. **要停住受试体只有 `dispose()` 一条路。** `startActivation({ signal })` 的 `signal` 只管
    **受理之前**：受理之后子会话不再与它相连，abort 一个信号停不下任何东西。所以预算到点要主动
    `dispose()`（它取消本轮、等 idle、把 `result` 结算成 `aborted`），并且**只有结果真的是
    `aborted` 才算 `timedOut`**。（红线 **B23**，真机实测：700ms 预算配出 15.5s 的 `completed`）
+   **但"能停"不等于"该停"**：子 agent 有自己的 Session 与 turn，父 agent 喊停什么都不会自动传下去。
+   所以前台那一轮被中断**不** dispose 受试体，只停止开始下一个 trial；`job_kill` 才连受试体一起停。
+   决定写在调用点（`RunStop.stopSubject`），别让"传了哪个信号"替你表达意图。（红线 **B28**）
 10. **两个等待，一份执行体。** 前台调用和后台 job 只允许在「谁等」上不同，必须调同一个
     `runBench()`；否则同一个实验会长出两种记录形状。后台那一侧用**自己的** `AbortController`
     （工具调用的信号已作废），并且 `job.append` 不要带 `log` 通道 —— 那个通道**不进模型**。

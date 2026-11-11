@@ -22,7 +22,7 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 | [fault.test.ts](fault.test.ts) | 三种故障模式、可达性校验 | [src/fault.ts](../src/fault.ts) |
 | [abort.test.ts](abort.test.ts) | 预算到点时挂/摘监听的两个边界：已 abort、已 detach | [src/abort.ts](../src/abort.ts) |
 | [attachments.test.ts](attachments.test.ts) | 种类判定（扩展名）、图片路由的三条拒绝、文本在前/附件按序、记录只留身份、两条读上限 | [src/attachments.ts](../src/attachments.ts) |
-| [jobs.test.ts](jobs.test.ts) | 三种 job 结局的映射：完成 / 被杀 / 失败，以及状态行只放一行 | [src/jobs.ts](../src/jobs.ts) |
+| [jobs.test.ts](jobs.test.ts) | 三种 job 结局的映射：完成 / 被杀 / 失败（含"没抛异常的喊停也算被杀"），以及状态行只放一行 | [src/jobs.ts](../src/jobs.ts) |
 | [record.test.ts](record.test.ts) | run 目录形状、`wx` 独占、`discard` | [src/record.ts](../src/record.ts) |
 | [catalog.test.ts](catalog.test.ts) | 目录键、默认集、描述生成 | [src/catalog.ts](../src/catalog.ts) |
 | [smoke.test.ts](smoke.test.ts) | 模块能 import、注册面存在 | [src/index.ts](../src/index.ts) |
@@ -58,6 +58,7 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 | B25 | 判定词只说实测到的：挂载了不出力的行是**警告**；文件摘要与指纹不共用「digest」一个词 |
 | B26 | 后台 run 与前台 run 是同一个执行体；后台用 job 自己的取消信号；进度不带 `log` 通道（那个通道不进模型） |
 | B27 | 附件不许静默降级：图片在开跑前查受试体路由（不支持就拒）、文件只是路径句柄、记录里只有身份没有字节 |
+| B28 | 喊停只停"开始下一个"：前台中断不 dispose 受试体、后台 `job_kill` 才停；部分摘要报 `stopped`；job 没抛也要 `killed` |
 
 ## 已知盲区（**不是遗漏，是边界**）
 

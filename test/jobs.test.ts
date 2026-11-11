@@ -18,6 +18,15 @@ describe('jobOutcomeOf', () => {
     })
   })
 
+  it('reports a stop that did not throw as killed too', () => {
+    // A stop is not an error: `runBench` returns a partial summary, so `error === undefined` used to
+    // mean `completed` and a killed job read as a finished one with fewer trials than it asked for.
+    expect(jobOutcomeOf(true, undefined, '1/4 trial(s) recorded')).toEqual({
+      status: 'killed',
+      result: '1/4 trial(s) recorded',
+    })
+  })
+
   it('reports a broken run as failed, with a one-line status', () => {
     // `detail` renders inside `[status: failed, …]`, so a multi-line message there became a paragraph
     // in the status line — measured on a killed run before this was narrowed.

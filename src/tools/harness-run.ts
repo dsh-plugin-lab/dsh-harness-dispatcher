@@ -79,6 +79,9 @@ const OUTPUT_SCHEMA = {
     harnessPath: { type: 'string' },
     recorded: { type: 'number' },
     completed: { type: 'number' },
+    // Present only when the caller stopped before every trial ran. `recorded < trials` alone would not
+    // say whether the rest were skipped or the run broke.
+    stopped: { type: 'boolean' },
     jobId: { type: 'string' },
     // One entry per trial, foreground only. `stopReason` is the outcome; the folded views are in the file.
     outcomes: {
@@ -179,7 +182,11 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
               value.jobId === undefined
                 ? `${String(value.recorded ?? 0)}/${String(value.trials)} trial(s) recorded, ` +
                   `${String(value.completed ?? 0)} completed → ${value.recordPath ?? value.directory}` +
-                  `\nharness ${value.fingerprint} captured at ${value.harnessPath ?? value.directory}`
+                  `\nharness ${value.fingerprint} captured at ${value.harnessPath ?? value.directory}` +
+                  (value.stopped === true
+                    ? `\nstopped before every trial ran; the ${String(value.recorded ?? 0)} recorded ` +
+                      'are complete records, and no further trial was started'
+                    : '')
                 : `started background run ${value.jobId} → ${value.directory}` +
                   `\nharness ${value.fingerprint} · ${String(value.trials)} trial(s) queued. ` +
                   '`job_output` reads per-trial progress, a completion notice brings the totals, ' +
@@ -248,7 +255,12 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
           })
         }
 
-        const summary = await runBench(ctx, depsForRun, request, parent, exec.signal)
+        const summary = await runBench(ctx, depsForRun, request, parent, {
+          // A stopped turn stops this call, not the subject: the trials already on disk are complete
+          // records, and the subject belongs to its own operator.
+          signal: exec.signal,
+          stopSubject: false,
+        })
         const completed = summary.outcomes.filter(
           (outcome) => outcome.stopReason === 'completed',
         ).length
@@ -262,6 +274,7 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
           trials: summary.trials,
           recorded: summary.outcomes.length,
           completed,
+          ...(summary.stopped ? { stopped: true } : {}),
           outcomes: summary.outcomes.map(outcomeOf),
         }
       },
@@ -341,16 +354,26 @@ function startBackground(
       const controller = new AbortController()
       const done = (async () => {
         try {
-          const summary = await runBench(ctx, runDeps, request, parent, controller.signal, {
-            onTrial: (outcome, recorded) => {
-              job.updateProgress(`trial ${String(recorded)}/${String(request.trials)}`)
-              // Unlabelled on purpose: the registry's `log` channel is producer narration for
-              // observers and **never reaches the model** (`dsh-tool-jobs`' own render rule). Per-trial
-              // lines exist to be read by whoever is waiting, so they must not carry that label.
-              job.append(`${trialLine(outcome, request.trials)}\n`)
+          const summary = await runBench(
+            ctx,
+            runDeps,
+            request,
+            parent,
+            // Killing this job is an explicit instruction about this run, so it does stop the subject.
+            { signal: controller.signal, stopSubject: true },
+            {
+              onTrial: (outcome, recorded) => {
+                job.updateProgress(`trial ${String(recorded)}/${String(request.trials)}`)
+                // Unlabelled on purpose: the registry's `log` channel is producer narration for
+                // observers and **never reaches the model** (`dsh-tool-jobs`' own render rule).
+                // Per-trial lines exist to be read by whoever is waiting, so they must not carry that
+                // label.
+                job.append(`${trialLine(outcome, request.trials)}\n`)
+              },
             },
-          })
-          return jobOutcomeOf(false, undefined, summaryLine(summary))
+          )
+          // `stopped` comes from the run itself: a kill leaves a partial summary, not a rejection.
+          return jobOutcomeOf(stopped || summary.stopped, undefined, summaryLine(summary))
         } catch (error) {
           // The run's error already says how many trials landed and where they are, so the result can
           // be the message itself rather than a second, slightly different summary.

@@ -83,13 +83,17 @@ export interface JobRegistry {
  * paragraph into `[status: killed, …]`. The full text travels in `result`, which is a body the model reads
  * rather than a label. A killed job reports no detail at all — the registry merges the kill reason the
  * caller supplied, and repeating it here printed the reason twice.
+ *
+ * `stopped` is consulted even when nothing threw, because a stop is not an error: the run returns a
+ * partial summary, and a job whose own cancellation produced it must settle as `killed` rather than as
+ * `completed` — otherwise a killed job reads as a finished one with fewer trials than it asked for.
  * @param stopped - whether the job's own cancellation is what ended the run.
  * @param error - the thrown value, when the run threw.
  * @param result - what the model should read on its first read after settlement.
  * @returns the outcome the registry records.
  */
 export function jobOutcomeOf(stopped: boolean, error: unknown, result: string): JobOutcome {
-  if (error === undefined) return { status: 'completed', result }
+  if (error === undefined) return { status: stopped ? 'killed' : 'completed', result }
   if (stopped) return { status: 'killed', result }
   const detail = firstLine(error instanceof Error ? error.message : String(error))
   return detail === '' ? { status: 'failed', result } : { status: 'failed', detail, result }

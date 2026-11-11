@@ -237,10 +237,13 @@ describe('B6 — a run leaves nothing behind', () => {
     expect(presetIdFor('run-a')).toContain('run-a')
   })
 
-  it('removes a run directory that never reached its first trial', () => {
+  it('removes a run directory that recorded no trial', () => {
     // The alternative is a directory holding no trial, which is indistinguishable from a run whose
-    // subject did nothing — a plausible empty result.
-    expect(runSources()).toMatch(/if \(!started\)\s*await run\.discard\(\)/)
+    // subject did nothing — a plausible empty result. The condition is "recorded nothing", NOT "reached
+    // the loop": the two readings differ by exactly one trial, and the gap between them was a stop that
+    // landed during the mount, which left an empty directory behind.
+    expect(runSources()).toMatch(/if \(!recorded\)\s*await run\.discard\(\)/)
+    expect(runSources()).toMatch(/release\(ctx, subject, presetId, run, outcomes\.length > 0\)/)
   })
 
   it('keeps a partially recorded run and says so', () => {
@@ -1114,6 +1117,7 @@ describe('B22 — the skill is one page, and it says everything once', () => {
       /run_in_background/, // a long run is a job, not a held turn
       /attachments/, // a task can carry a picture or a file, and the two are different experiments
       /placeholder line/, // an image the route cannot deliver is refused, not silently swapped
+      /stopped: true/, // your own stop ends the waiting, not somebody else's work
     ]) {
       expect(body, `the skill no longer states ${String(fact)}`).toMatch(fact)
     }
@@ -1281,9 +1285,87 @@ describe('B23 — a trial stopped by its own budget is stopped, not just labelle
         { ...OUTCOME, index: 1, stopReason: 'aborted', timedOut: true },
         { ...OUTCOME, index: 2, stopReason: 'aborted', timedOut: true },
       ],
+      stopped: false,
     }
     expect(summaryLine(summary)).toBe(
       '2/2 trial(s) recorded, 0 completed → /tmp/run-x/trials.jsonl',
     )
+  })
+})
+
+describe('B28 — a stop ends the waiting, not somebody else’s work', () => {
+  /**
+   * The rule: a subject is independent work, and who may stop it is a decision, not a side effect.
+   *
+   * A child gets its own Session and its own turn, so nothing propagates into it by itself. The two
+   * callers want opposite things and both are right: interrupting the calling turn means "I will not
+   * read any more of this", while `job_kill` means "stop that run". Wiring both to `dispose()` made the
+   * first one kill work its owner never asked to kill, and the second interpretation is the reason the
+   * field exists at either call site rather than being implied by which signal was passed.
+   *
+   * The other half of the same rule is what a stop must NOT do: it must not throw away a directory that
+   * holds records, and it must not leave one that holds none.
+   */
+  it('stops starting trials instead of throwing away the one in flight', () => {
+    const body = stripComments(sources().get('src/run.ts') ?? '')
+    // The loop breaks; it does not `throwIfAborted()`, which would abandon a trial mid-thought.
+    expect(body).toMatch(/if \(stop\.signal\.aborted\) \{/)
+    expect(body).not.toContain('throwIfAborted')
+    // And the outcome is reported rather than inferred from a short count.
+    expect(body).toMatch(/stopped = true/)
+    expect(body).toMatch(/outcomes,\s*\n\s*stopped,/)
+  })
+
+  it('says which caller may cancel the subject, at both call sites', () => {
+    const tool = stripComments(sources().get('src/tools/harness-run.ts') ?? '')
+    // Foreground: the calling turn's stop leaves the subject alone.
+    expect(tool).toMatch(/signal: exec\.signal,\s*\n\s*stopSubject: false,/)
+    // Background: killing the job is an instruction about this run.
+    const background = tool.slice(tool.indexOf('function startBackground'))
+    expect(background).toMatch(/signal: controller\.signal, stopSubject: true/)
+  })
+
+  it('only cancels the subject when the stop is allowed to', () => {
+    const code = stripComments(sources().get('src/trial.ts') ?? '')
+    // A stop that cannot cancel contributes nothing to the fused signal, so the budget is the only
+    // thing that can end the trial early — which is exactly what `timedOut` is then told.
+    expect(code).toMatch(/stop\.stopSubject\s*\n?\s*\?/)
+    expect(code).toMatch(/stop\.stopSubject \? stop\.signal : undefined/)
+  })
+
+  it('does not blame the budget for a stop that happened before it fired', () => {
+    const live = new AbortController()
+    const fired = new AbortController()
+    fired.abort()
+    // A caller that cannot cancel is the same as nobody stopping: the budget is what ended the trial.
+    expect(stoppedByBudget(fired.signal, undefined, 'aborted')).toBe(true)
+    expect(stoppedByBudget(fired.signal, undefined, 'completed')).toBe(false)
+    expect(stoppedByBudget(undefined, undefined, 'aborted')).toBe(false)
+    expect(stoppedByBudget(live.signal, undefined, 'aborted')).toBe(false)
+  })
+
+  it('settles a killed job as killed, even though a stop is not an error', () => {
+    // A stopped run returns a summary rather than throwing, so `error === undefined` used to mean
+    // `completed`: a killed job read as a finished one that ran fewer trials than it asked for.
+    expect(jobOutcomeOf(true, undefined, 'partial').status).toBe('killed')
+    expect(jobOutcomeOf(false, undefined, 'done').status).toBe('completed')
+  })
+
+  it('tells a reader the run stopped, instead of leaving them to infer it', () => {
+    const summary = {
+      runId: 'run-y',
+      fingerprint: 'abc',
+      directory: '/tmp/run-y',
+      recordPath: '/tmp/run-y/trials.jsonl',
+      harnessPath: '/tmp/run-y/harness.json',
+      trials: 4,
+      outcomes: [{ ...OUTCOME, index: 1 }],
+      stopped: true,
+    }
+    const line = summaryLine(summary)
+    expect(line).toContain('1/4 trial(s) recorded')
+    expect(line).toContain('stopped before every trial ran')
+    // The same run without the stop is a different sentence, so the news cannot be read as boilerplate.
+    expect(summaryLine({ ...summary, stopped: false })).not.toContain('stopped')
   })
 })

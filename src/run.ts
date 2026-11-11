@@ -18,6 +18,9 @@
  * read-back produced a run directory with an empty `trials.jsonl` — a plausible empty result, the worst
  * outcome an experiment can have.
  *
+ * Step 4 answers to a stop by **not starting the next trial**: the trial in flight is the subject's own
+ * work, and {@link RunStop.stopSubject} is who decides whether a stop also cancels it.
+ *
  * @module dsh-harness-dispatcher/run
  */
 
@@ -38,7 +41,7 @@ import type { RunHandle } from './record.ts'
 import { hostToolNames, mountSubject, presetIdFor } from './subject.ts'
 import type { Subject } from './subject.ts'
 import { runTrial } from './trial.ts'
-import type { TrialOutcome } from './trial.ts'
+import type { RunStop, TrialOutcome } from './trial.ts'
 
 /** Everything one run needs. Resolved and validated by the caller, so nothing here can be rejected late. */
 export interface RunRequest {
@@ -83,6 +86,14 @@ export interface RunSummary {
   readonly harnessPath: string
   readonly trials: number
   readonly outcomes: readonly TrialSummary[]
+  /**
+   * Whether the caller asked to stop before every requested trial had run.
+   *
+   * Reported rather than inferred: `outcomes.length < trials` means either "stopped" or "the loop
+   * threw", and a reader who has to guess which will guess wrong. A stopped run is not a failure — the
+   * trials that ran are data, and the ones that did not were never started.
+   */
+  readonly stopped: boolean
 }
 
 /** The runtime seams a run borrows from the plugin instance. */
@@ -107,10 +118,13 @@ export interface RunObserver {
  */
 export function summaryLine(summary: RunSummary): string {
   const completed = summary.outcomes.filter((outcome) => outcome.stopReason === 'completed').length
-  return (
+  const counts =
     `${String(summary.outcomes.length)}/${String(summary.trials)} trial(s) recorded, ` +
-    `${String(completed)} completed → ${summary.recordPath}`
-  )
+    `${String(completed)} completed`
+  const stopped = summary.stopped
+    ? ` — stopped before every trial ran; the ones recorded are complete records`
+    : ''
+  return `${counts}${stopped} → ${summary.recordPath}`
 }
 
 /**
@@ -120,17 +134,17 @@ export function summaryLine(summary: RunSummary): string {
  * @param deps - registries, seams and where records live.
  * @param request - the validated stimulus and task.
  * @param parent - the calling agent, which supplies lineage and the default working directory.
- * @param signal - cancellation for the whole run.
+ * @param stop - the stop request and what it may stop; see {@link RunStop}.
  * @param observer - optional per-trial reporting.
  * @returns the finished run; a partial run is still returned as an exception carrying its count.
- * @throws {Error} when the harness cannot be mounted, or the run is cancelled after recording began.
+ * @throws {Error} when the harness cannot be mounted, or the run fails after recording began.
  */
 export async function runBench(
   ctx: Context,
   deps: RunDeps,
   request: RunRequest,
   parent: Agent,
-  signal: AbortSignal,
+  stop: RunStop,
   observer?: RunObserver,
 ): Promise<RunSummary> {
   const { harness, faults, runId } = request
@@ -159,8 +173,8 @@ export async function runBench(
   )
 
   let subject: Subject | undefined
-  let started = false
   const outcomes: TrialSummary[] = []
+  let stopped = false
   try {
     subject = await mountSubject(ctx, {
       presetId,
@@ -189,10 +203,15 @@ export async function runBench(
       faults,
     }
 
-    started = true
+    // A stop means "start no more trials", never "throw away the one running". The subject is its own
+    // Session, so a trial in flight is somebody else's work to stop — and a trial cut off mid-thought
+    // would produce a record that says less than the one it was going to produce a moment later.
     for (let index = 1; index <= request.trials; index += 1) {
-      signal.throwIfAborted()
-      outcomes.push(summarize(await runTrial(deps, plan, parent, signal, run, index)))
+      if (stop.signal.aborted) {
+        stopped = true
+        break
+      }
+      outcomes.push(summarize(await runTrial(deps, plan, parent, stop, run, index)))
       observer?.onTrial?.(outcomes[outcomes.length - 1] as TrialSummary, outcomes.length)
     }
 
@@ -204,11 +223,12 @@ export async function runBench(
       harnessPath: run.harnessPath,
       trials: request.trials,
       outcomes,
+      stopped,
     }
   } catch (error) {
-    // A cancelled or failed run has usually still recorded something. Saying so is the difference
-    // between "I lost my work" and "the first 3 of 10 are on disk".
-    if (started && outcomes.length > 0) {
+    // A failed run has usually still recorded something. Saying so is the difference between "I lost my
+    // work" and "the first 3 of 10 are on disk".
+    if (outcomes.length > 0) {
       throw new Error(
         `${describe(error)}\n${String(outcomes.length)}/${String(request.trials)} trial(s) were already ` +
           `recorded and are readable at ${run.recordPath} — the directory is kept, it is data.`,
@@ -217,17 +237,17 @@ export async function runBench(
     }
     throw error
   } finally {
-    await release(ctx, subject, presetId, run, started)
+    await release(ctx, subject, presetId, run, outcomes.length > 0)
   }
 }
 
-/** Unmount, and throw away a directory that never reached its first trial. */
+/** Unmount, and throw away a directory that recorded nothing. */
 async function release(
   ctx: Context,
   subject: Subject | undefined,
   presetId: string,
   run: RunHandle,
-  started: boolean,
+  recorded: boolean,
 ): Promise<void> {
   if (subject !== undefined) {
     // Always unmount: a leaked preset keeps a whole Loader tree alive and makes a later mount of the
@@ -238,9 +258,11 @@ async function release(
       )
     })
   }
-  // A run that never reached trial 1 recorded nothing, and a directory that holds no trial is
-  // indistinguishable from a run whose subject did nothing. Remove it.
-  if (!started) await run.discard().catch(() => undefined)
+  // A directory that holds no trial is indistinguishable from a run whose subject did nothing, and it
+  // is worse than no directory at all. The condition is "recorded nothing", not "did not reach the
+  // loop": a stop that lands during the mount used to leave an empty directory behind, because the two
+  // readings of "started" differ by exactly one trial.
+  if (!recorded) await run.discard().catch(() => undefined)
 }
 
 /** The part of a trial outcome the caller sees. */

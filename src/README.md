@@ -43,10 +43,10 @@ harness 文件的裸模块名只在那里解析得到（见 [AGENTS.md](AGENTS.m
 
 | 文件 | 导出 | 谁依赖 | 改后必跑 |
 |---|---|---|---|
-| [run.ts](run.ts) | `runBench` / `summaryLine` / `RunRequest` / `RunSummary` | `tools/harness-run`（两条等待都调它） | **B6 / B8 / B10 / B15**（执行体搬家后仍在这里）+ **B26**（唯一执行体） |
-| [trial.ts](trial.ts) | `runTrial` / `stoppedByBudget` / `TrialPlan` / `TrialOutcome` | `run` | **B23** + `fold` 单测 |
+| [run.ts](run.ts) | `runBench` / `summaryLine` / `RunRequest` / `RunSummary` | `tools/harness-run`（两条等待都调它） | **B6 / B8 / B10 / B15**（执行体搬家后仍在这里）+ **B26**（唯一执行体）+ **B28**（喊停返回部分摘要、目录判据是"有没有记录"） |
+| [trial.ts](trial.ts) | `runTrial` / `stoppedByBudget` / `RunStop` / `TrialPlan` / `TrialOutcome` | `run` | **B23** + **B28**（`stopSubject` 决定谁能取消受试体）+ `fold` 单测 |
 | [abort.ts](abort.ts) | `onceAborted` | `trial` | `abort` 单测 |
-| [jobs.ts](jobs.ts) | `jobOutcomeOf` + `JobRegistry` 等结构类型 | `tools/harness-run` | **B26**（`killed` / `failed` 分清；`detail` 只放一行） |
+| [jobs.ts](jobs.ts) | `jobOutcomeOf` + `JobRegistry` 等结构类型 | `tools/harness-run` | **B26 / B28**（`killed` / `failed` 分清；没抛的喊停也是 `killed`；`detail` 只放一行） |
 | [collector.ts](collector.ts) | `FoldCollector` | `run` | `fold` 单测 |
 | [fold.ts](fold.ts) | `foldEvent` / `finishFold` / `summarize` / `TrialObservations` | `collector`、`record` | **B4 / B7** + `fold` 单测 |
 | [record.ts](record.ts) | `openRun` / `stimulusRecord` / `TrialRecord` | 三个工具 | **B5 / B6** + `record` 单测 |
@@ -106,7 +106,7 @@ frontmatter 的 `name` / `description` / `author` / `metadata.source`），apply
 | 导出记录的字段 | `record.ts` 的 `TrialRecord` → [数据出口只有两个函数](../docs/ARCHITECTURE.md#44-数据出口只有两个函数) |
 | 观测折叠的语义 | `fold.ts` → `fold` 单测 → [折叠的边界是硬的](../docs/ARCHITECTURE.md#43-折叠的边界是硬的) → 红线 B4/B7 |
 | 故障模式 | `fault.ts` + `gate.ts` 三条管线 → [三种故障是三个不同的实验](../docs/ARCHITECTURE.md#23-三种故障是三个不同的实验不是同一个设置的三个档) |
-| 超时 / 取消（停住一个正在跑的受试体） | `trial.ts` 的 `onceAborted` 监听 → [停止一个正在跑的受试体](../docs/ARCHITECTURE.md#53-停止一个正在跑的受试体) → 红线 **B23** |
+| 超时 / 取消（停住一个正在跑的受试体） | `trial.ts` 的 `onceAborted` 监听 → [停止一个正在跑的受试体](../docs/ARCHITECTURE.md#53-停止一个正在跑的受试体) → 红线 **B23 / B28** |
 | 后台 / 长跑（`ctx.jobs`） | `jobs.ts` 的结构类型 + `run.ts` 的执行体 → [后台通道](../docs/ARCHITECTURE.md#51-后台通道同一个工具的一个开关) → 红线 **B26** |
 | 依赖范围 | `engines.dsh` / `peerDependencies` / devDependencies **三处同批**，且逐字相同 |
 
