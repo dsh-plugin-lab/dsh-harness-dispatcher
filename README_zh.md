@@ -21,9 +21,12 @@ Model + Harness = Agent
     也可以 `{ preset: "standard" }` 直接看宿主已有的 preset，**连文件都不用生成**；
   - `harness_run` —— 任务 + harness + trial 数 → 一个 run 句柄与逐 trial 结果。**记录文件才是交付物**。
 - **一个故障闸门**：对指定工具注入 `deny` / `fail` / `latency`，只作用于受试体，对其他 agent 零改动。
-- **两条折叠**：受试体**做了什么**（`trace`：turn/step/工具调用数、按工具名的错误、token 记账、最终文本），
-  以及受试体**被给了什么**（`modelInput`：system prompt 摘要、工具名与 schema 摘要、实际路由）。
-  全是事实，没有判断。
+- **宿主自己的数字，原样导出**（`host`）：宿主注册了的那些投影 key —— 耗时与计数、四个互不重叠的
+  token 桶、上下文压力对窗口、受试体跑在什么策略下，以及纯 harness 行为（委派、计划、todo）。
+  照抄不改；宿主新增一个投影，这里就加一个字符串。
+- **我们自己的两个视图**：受试体**被给了什么**（`modelInput`：system prompt 摘要、工具名与 schema 摘要、
+  实际路由 —— "两次跑是不是同一份装配"的证据），以及没有任何投影提供的三个数（`trace`：
+  工具调用数、错误数、按工具拆分）。
 - **一个随包注册的 skill**（`dsh-harness-dispatcher`，与包同名）：把这条回路和两个命名空间陷阱写在里面，
   agent 自己会找到。
 
@@ -41,9 +44,15 @@ Model + Harness = Agent
 <outputRoot>/<runId>/
   run.json          # run 身份、任务、stimulus 摘要、探到的 surface
   harness.<ext>     # harness 的逐字副本（捷径形式是 harness.json）
-  trials.jsonl      # 每 trial 一行：stimulus、结果、两条折叠视图
+  trials.jsonl      # 每 trial 一行：stimulus、结果、宿主的数字、我们的两个视图
+  events.jsonl      # 受试体的已提交会话事件，逐字：最底层那层
   README.txt        # 给读数据的人：该比哪个字段
 ```
+
+`events.jsonl` **默认开**，`record_events: false` 关掉。它的价值在于记录能按一个本插件从未有过的口径重算，
+而且它装着聚合层留不住的东西：工具实参、工具返回、被注入的上下文、逐 step 时间戳、重试、压缩。
+它也是目录体积的大头 —— 实测一次单 step 的琐碎 trial 是 **47.7 KB**，其中 35.4 KB 是 `request/header`
+里逐字的工具 schema。里面有受试体看到的 prompt 与模型输出。
 
 **run 目录里那份副本是证据，不是跑的那个东西。** 真正挂载的是原文件所在的那份 ——
 所以两者并排出现，而值得编辑的只有原文件。用 `tools`/`persona` 捷径的 run 根本没有原文件，

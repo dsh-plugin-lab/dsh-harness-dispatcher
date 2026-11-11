@@ -91,9 +91,18 @@ what it is, and the two are different experiments:
 
 ## What the records say
 
-- `trace` — what the subject DID: turns, steps, tool calls, per-tool errors, tokens, final text.
-- `modelInput` — what it WAS GIVEN: the system prompt (digest and length), the assembled tool schemas,
-  the route actually used. This is why "the same harness" is checkable rather than trusted.
+- `host` — what the HOST computed, copied back unchanged: `sessionStats` (turns, steps, llmMs, toolMs,
+  ttftMs, decodeMs, decodeTokens), `tokenUsage`, `contextPressure` against `contextWindow`,
+  `contextBreakdown`, `permissions`, `modelSelection`, `subagentCatalog`, `subagentTiming`,
+  `turnOutline`. Compare timings here rather than computing your own — a second set of totals means a
+  second set of definitions.
+- `modelInput` — what the subject WAS GIVEN: the system prompt (digest and length), the assembled tool
+  schemas, the route actually used. This is why "the same harness" is checkable rather than trusted.
+- `trace` — the three counts no projection offers: tool calls, tool errors, per-tool split.
+- `events.jsonl` — the subject's committed events, verbatim. On by default; `record_events: false`
+  turns it off. It is where tool arguments, tool results, injected context, per-step timing, retries
+  and compaction live, and it is what lets you re-fold a run under a definition this bench never had.
+  It dominates the directory: 47.7 KB for one trivial trial, 35.4 KB of it the tool schemas.
 - `surface` (in `run.json`) — what it mounted with: each row's enablement, plus the tool and skill
   names callable in the subject's scope.
 

@@ -7,31 +7,25 @@ function event(type: string, data: unknown, seq = 1): SessionEvent {
   return { type, seq, time: seq, data } as unknown as SessionEvent
 }
 
-function assistant(text: string, extra: Record<string, unknown> = {}): SessionEvent {
-  return event('assistant/message', {
-    turn: 1,
-    step: 1,
-    message: { role: 'assistant', content: [{ type: 'text', text }] },
-    stream: [],
-    ...extra,
-  })
-}
-
 /**
  * One reducer, two views. The trace says what the subject did; `modelInput` says what it was given.
  * The second view is what lets this bench claim "the same harness" without trusting a file.
+ *
+ * The trace is down to three fields on purpose. Turn and step counts are the host's `sessionStats`,
+ * the token buckets are its `tokenUsage`, and the final text is the record's own `output`. Everything
+ * else that used to be folded here — turn-end reasons, interrupt flags, unanswered calls, the last
+ * error pair — is recoverable from `events.jsonl`, which the run directory carries verbatim.
  */
 describe('the trace view', () => {
-  it('counts turns, steps and calls', () => {
+  it('counts tool calls and errors, which no host projection offers', () => {
+    // The one thing left: per-tool counts. A projection gives totals for turns, steps and tokens, but
+    // nothing anywhere says which tool failed.
     const facts = summarize([
-      event('turn/end', { turn: 1, reason: { kind: 'completed' } }),
-      event('step/end', { turn: 1, step: 1 }),
       event('tool/call', { turn: 1, step: 1, callId: 'c1', name: 'read', arguments: '{}' }),
     ])
-    expect(facts.trace.turns).toBe(1)
-    expect(facts.trace.steps).toBe(1)
     expect(facts.trace.toolCalls).toBe(1)
-    expect(facts.trace.turnEndReasons).toEqual(['completed'])
+    expect(facts.trace.toolErrors).toBe(0)
+    expect(facts.trace.byTool.read).toEqual({ calls: 1, errors: 0 })
   })
 
   it('attributes a tool error to the tool that issued the call', () => {
@@ -45,32 +39,24 @@ describe('the trace view', () => {
       }),
     ])
     expect(facts.trace.byTool.read).toEqual({ calls: 1, errors: 1 })
-    expect(facts.trace.endedOnUnrecoveredError).toBe(true)
+    expect(facts.trace.toolErrors).toBe(1)
   })
 
-  it('leaves usage null when the adapter reported nothing', () => {
-    // A missing report recorded as zero would make every terse route look infinitely cheap.
-    expect(summarize([assistant('hi')]).trace.usage).toBeNull()
-  })
-
-  it('counts unreported settlements beside the totals', () => {
+  it('does not count a turn or a step, because the host already does', () => {
+    // Two numbers with one name is worse than a missing number: this bench used to count `turn/end`
+    // while `sessionStats.turns` counts turns carrying at least one closed step, so a record and the
+    // status bar disagreed about the same session and neither was wrong.
     const facts = summarize([
-      assistant('a', { usage: { inputTokens: 5, outputTokens: 6 } }),
-      assistant('b'),
+      event('turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      event('step/end', { turn: 1, step: 1 }),
+      event('assistant/message', {
+        turn: 1,
+        step: 1,
+        message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+        usage: { inputTokens: 5, outputTokens: 6 },
+      }),
     ])
-    expect(facts.trace.usage).toEqual({
-      inputTokens: 5,
-      outputTokens: 6,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      unreportedSettlements: 1,
-    })
-  })
-
-  it('keeps the final text and marks an interrupted settlement', () => {
-    const facts = summarize([assistant('partial', { interrupted: true })])
-    expect(facts.trace.finalText).toBe('partial')
-    expect(facts.trace.interrupted).toBe(true)
+    expect(Object.keys(facts.trace).sort()).toEqual(['byTool', 'toolCalls', 'toolErrors'])
   })
 })
 

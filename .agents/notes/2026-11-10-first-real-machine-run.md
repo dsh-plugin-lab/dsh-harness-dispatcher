@@ -51,8 +51,13 @@ if (!(tool in TOOL_KEYS))   // TOOL_KEYS 是 Set
 | `trace.toolCalls` | **1** | **3** |
 | `trace.toolErrors` | **0** | **2** |
 | `trace.byTool` | `read: {calls:1, errors:0}` | `read: {calls:2, errors:2}` + `pwsh: {calls:1, errors:0}` |
-| `usage.inputTokens` | 21 396 | 41 926 |
-| `finalText` | `dsh-harness-dispatcher` | `dsh-harness-dispatcher` |
+| `usage.inputTokens`（现为 `host.tokenUsage`） | 21 396 | 41 926 |
+| 最终文本（现为 `output`） | `dsh-harness-dispatcher` | `dsh-harness-dispatcher` |
+
+> **字段名是 2026-11-11 晚改的，结论不变。** 当时读的是 `trace.usage` 与 `trace.finalText`；
+> 现在 token 桶来自宿主的 `tokenUsage` 投影（`host.tokenUsage.uncachedInputTokens`），最终文本就是
+> 记录自己的 `output`。同一次改动把 `trace` 砍到三个计数 —— 上面这两行的旧名留着，因为这张表
+> 记录的是那次实测看到了什么。
 
 **读法**（这是设计预测的行为，不是巧合）：
 
@@ -63,14 +68,18 @@ if (!(tool in TOOL_KEYS))   // TOOL_KEYS 是 Set
 
 **同时验证到的四件事**（一次跑动同时验）：
 ① preset 真的挂上了（fs + pwsh + persona 行）② persona 真的生效（记录里 `harness.persona` 是解析后的散文）
-③ 故障闸门**只命中受试 session**、只命中被判定的那个工具 ④ 轨迹折叠与 token 记账正确。
+③ 故障闸门**只命中受试 session**、只命中被判定的那个工具 ④ 轨迹折叠与 token 记账正确
+（这里当时记的是本仓自己折的 token 数；现在 token 直接读宿主投影，那个折叠已删）。
 
 ---
 
 ## 三、一处已知的表达力缺口（不是 bug，是记录面）
 
 注入的 `fail` 走的是 `tools/post-execute` 的 `block`，它把结果变成错误**但不带 `error` 字段**。
-所以记录里 `lastToolErrorCode` / `lastToolErrorName` 是 `null`，而 `byTool.read.errors = 2` 是对的。
+所以当时记录里 `lastToolErrorCode` / `lastToolErrorName` 是 `null`，而 `byTool.read.errors = 2` 是对的。
+
+**这两个字段后来删了**（2026-11-11 晚）：它们能从 `events.jsonl` 的 `tool/result` 原样读出，
+留在聚合层只是多一份会漂的定义。而 `byTool` 留着 —— 25 个宿主投影里没有一个给逐工具计数。
 
 含义：**「工具真的抛错了」和「我们把它 block 成错误」在 `lastToolError*` 这两个字段上不可区分**。
 计数层面可分（`deny`/`fail` 是记录里 `harness.faults` 明写的），所以要分开只能靠 join 装配。

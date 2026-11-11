@@ -100,10 +100,18 @@ text ──┬─→ digest        声明层的身份，写进每条记录
   run.json          # runId, startedAt, recordSchema, stimulus, task, surface, note
   harness.<ext>     # 逐字副本（捷径形式是 harness.json）
   trials.jsonl      # 每 trial 一行
+  events.jsonl      # 受试体的已提交会话事件，逐字（2026-11-11 晚新增，见下）
   README.txt        # 给读数据的人：该比 stimulus.fingerprint
 ```
 
-`outputRoot` 默认 `~/.dsh/harness-dispatcher/runs`，所以这份副本本来就在 `.dsh` 里。
+**`events.jsonl` 是 2026-11-11 晚加的，默认开。** 理由：只有聚合值的记录不可重算，而纪律 1 要求
+「产物必须能被另一个口径重算」。它同时装着聚合层留不住的东西 —— 工具实参、工具返回、被注入的
+上下文、逐 step 时间戳、重试、压缩（宿主的 25 个投影里没有一个暴露压缩）。体积实测：一次单 step
+的琐碎 trial 47.7 KB，其中 35.4 KB 是 `request/header` 里逐字的工具 schema；**不优化它**，
+底层那份是产物。同一个改动还把 `trace` 从 12 个字段砍到 3 个（宿主算过的全部改读投影，
+见 [边界那一节](../../docs/ARCHITECTURE.md#43-边界从算不算改成谁已经算过)）。
+
+`outputRoot` 默认 `$DSH_HOME/harness-dispatcher/runs`（`$DSH_HOME` 未设置时即 `~/.dsh/…`）。
 
 **文件名是 `harness.<ext>` 而不是固定的 `harness.yml`**（这一条是落地时改的，理由记在这里）：
 扩展名不能固定，因为它决定宿主用哪个解析器回放这份副本；而捷径产出的确实是 JSON

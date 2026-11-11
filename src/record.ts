@@ -64,7 +64,7 @@ export interface TaskRecord {
   readonly attachments: readonly TaskAttachment[]
 }
 
-/** One trial's durable record: the stimulus, the outcome, and the two folded views. */
+/** One trial's durable record: stimulus, outcome, the host's numbers, and the two views we fold. */
 export interface TrialRecord {
   /** Identity of the benchmark run this trial belongs to. */
   readonly runId: string
@@ -88,7 +88,13 @@ export interface TrialRecord {
   readonly timedOut: boolean
   /** Provider-authored failure detail, when the runtime supplied one. */
   readonly diagnostic: string | null
-  /** The subject's final text, truncated. */
+  /**
+   * The subject's final text, flattened and cut at 4 000 characters.
+   *
+   * A convenience excerpt, not the answer: the full text is in `events.jsonl`'s last
+   * `assistant/message`, which is on by default. A caller that turns the raw log off accepts that
+   * this field is then the only copy — and that a long answer is truncated here.
+   */
   readonly output: string
   /** The subject's structured answer, when the task requested a schema. */
   readonly structured: unknown
@@ -174,8 +180,12 @@ export interface RunHandle {
  * `effective` to `surface`** — same data, one vocabulary, so a 2 and a 3 file are not interchangeable by
  * accident. **4 narrowed `surface.skills` from "skills registered for that scope" to "skills the
  * subject can load"**, so a 3 file's skill list can include names the subject had no way to reach.
+ * **5 replaced this plugin's own turn, step and token totals with the host's projections (`host`) and
+ * cut `trace` to the three counts no projection offers** — a 4 file's `trace.turns` counts `turn/end`
+ * events, while `host.sessionStats.turns` counts turns carrying a closed step, so the two disagree on
+ * exactly the runs a reader would compare.
  */
-const RECORD_SCHEMA = 4
+const RECORD_SCHEMA = 5
 
 /** The note a reader finds first. Short on purpose: it answers "which field do I compare?" */
 const README = `This directory is one benchmark run.

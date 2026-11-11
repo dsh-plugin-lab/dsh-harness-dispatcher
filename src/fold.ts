@@ -1,20 +1,23 @@
 /**
- * One reducer over a subject Session's committed events, producing two views of the same trial.
+ * One reducer over a subject Session's committed events, producing the two views the host does not.
  *
  * | view | question |
  * |---|---|
- * | {@link TraceFeatures} | *what did it do?* |
+ * | {@link TraceFeatures} | *which tools did it call, and which failed?* |
  * | {@link ObservedModelInput} | *what was it given?* |
  *
- * The second view is why two runs can be called "the same harness" without trusting a file: the
- * subject's own log records the rendered system prompt and the request header it was built under.
+ * Both survive here for one reason each, and nothing else does. The second is why two runs can be
+ * called "the same harness" without trusting a file: the subject's own log records the rendered system
+ * prompt and the request header it was built under. The first is the only count no host projection
+ * offers — turn, step, token and timing figures are the host's, read through
+ * [host.ts](host.ts) instead of recomputed here.
  *
  * Features are folded from the `session/event` feed, never read off a finished log: `snapshotEvents`,
  * `eventAt` and `ownEvents` are all marked "new calls prohibited" in the running host.
  * {@link summarize} runs the same reducer over an array, so a persisted log re-folds identically.
  *
  * No statistic and no judgement — the fold records what a judgement needs and stops. See
- * docs/ARCHITECTURE.md 的「折叠的边界是硬的」.
+ * docs/ARCHITECTURE.md 的「边界从「算不算」改成「谁已经算过」」.
  *
  * @module dsh-harness-dispatcher/fold
  */
@@ -22,57 +25,32 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { digestJson, digestText } from './digest.ts'
 
-/** Token counts for one child Session, as reported by the adapter. Never estimated here. */
-export interface TraceUsage {
-  readonly inputTokens: number
-  readonly outputTokens: number
-  readonly cacheReadTokens: number
-  readonly cacheWriteTokens: number
-  /**
-   * How many assistant settlements carried no `usage`. A missing report is recorded as *missing*, never
-   * as zero: conflating "the adapter did not say" with "the model used no tokens" would make every
-   * route that omits usage look infinitely cheap.
-   */
-  readonly unreportedSettlements: number
-}
-
 /** One tool's accumulated counts. */
 export interface TraceToolCount {
   readonly calls: number
   readonly errors: number
 }
 
-/** What one child Session did, stated only as countable or literal facts. */
+/**
+ * What one child Session did, stated only as countable or literal facts.
+ *
+ * Three fields, and each is here because no host projection answers it. Everything this type used to
+ * carry has moved or gone: `turns`/`steps` are the host's `sessionStats`, `usage` is its `tokenUsage`,
+ * and `finalText` was a duplicate of the record's own `output` — which already comes from the
+ * activation's result. The rest (`turnEndReasons`, `interrupted`, `unansweredCalls`,
+ * `endedOnUnrecoveredError`, the last-error pair) are all recoverable from `events.jsonl`, which the
+ * run directory carries verbatim.
+ *
+ * What remains is the one thing no projection offers: per-tool counts. "Which tool was called how
+ * often, and how often it failed" is the most-read signal in a harness comparison.
+ */
 export interface TraceFeatures {
-  /** Completed turns (`turn/end` events). */
-  readonly turns: number
-  /** Closed steps (`step/end`) — one model call plus the tools it requested. */
-  readonly steps: number
   /** Total `tool/call` events, including re-issued call ids from a retried step. */
   readonly toolCalls: number
   /** Total `tool/result` events whose message carries `isError: true`. */
   readonly toolErrors: number
   /** Per-tool-name counts, keyed by the model-facing tool name. */
   readonly byTool: Readonly<Record<string, TraceToolCount>>
-  /** Calls that produced no result at all (the run ended inside the call). */
-  readonly unansweredCalls: number
-  /**
-   * `true` when at least one tool failed and the most recent tool result was still a failure — i.e.
-   * the run ended with the failure standing. A *structural* fact, not a judgement about the answer.
-   */
-  readonly endedOnUnrecoveredError: boolean
-  /** The last assistant settlement's concatenated text, truncated. `null` when none was produced. */
-  readonly finalText: string | null
-  /** The `code` of the last tool failure, when the log carries one. */
-  readonly lastToolErrorCode: string | null
-  /** The `name` of the last tool failure, when the log carries one. */
-  readonly lastToolErrorName: string | null
-  /** Token accounting; `null` when the adapter reported nothing at all. */
-  readonly usage: TraceUsage | null
-  /** True when any assistant settlement was marked `interrupted`. */
-  readonly interrupted: boolean
-  /** Turn-end reason kinds in order, e.g. `['completed']` or `['error']`. */
-  readonly turnEndReasons: readonly string[]
 }
 
 /** The call configuration a subject's requests were built under. */
@@ -111,9 +89,6 @@ export interface TrialObservations {
   readonly modelInput: ObservedModelInput
 }
 
-/** Longest assistant text kept in a record. Records are evidence, not transcripts. */
-const TEXT_LIMIT = 2000
-
 /**
  * Mutable fold state.
  *
@@ -122,25 +97,11 @@ const TEXT_LIMIT = 2000
  * {@link emptyFold}.
  */
 export interface FoldState {
-  turns: number
-  steps: number
   toolCalls: number
   toolErrors: number
   byTool: Record<string, { calls: number; errors: number }>
   /** Call ids awaiting a result, in issue order. */
   pending: Map<string, string>
-  lastResultErrored: boolean
-  finalText: string | null
-  lastToolErrorCode: string | null
-  lastToolErrorName: string | null
-  inputTokens: number
-  outputTokens: number
-  cacheReadTokens: number
-  cacheWriteTokens: number
-  unreportedSettlements: number
-  sawAnyUsage: boolean
-  interrupted: boolean
-  turnEndReasons: string[]
   modelInput: {
     systemPrompt: { chars: number; digest: string } | null
     systemPromptUpdates: number
@@ -154,24 +115,10 @@ export interface FoldState {
 /** A fresh, empty fold state. */
 export function emptyFold(): FoldState {
   return {
-    turns: 0,
-    steps: 0,
     toolCalls: 0,
     toolErrors: 0,
     byTool: {},
     pending: new Map<string, string>(),
-    lastResultErrored: false,
-    finalText: null,
-    lastToolErrorCode: null,
-    lastToolErrorName: null,
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    unreportedSettlements: 0,
-    sawAnyUsage: false,
-    interrupted: false,
-    turnEndReasons: [],
     modelInput: {
       systemPrompt: null,
       systemPromptUpdates: 0,
@@ -184,14 +131,6 @@ export function emptyFold(): FoldState {
 }
 
 /** Truncate without leaving a dangling high surrogate at the cut. */
-function clip(text: string): string {
-  if (text.length <= TEXT_LIMIT) return text
-  let end = TEXT_LIMIT
-  const code = text.charCodeAt(end - 1)
-  if (code >= 0xd800 && code <= 0xdbff) end -= 1
-  return text.slice(0, end)
-}
-
 /** Concatenate the text blocks of a message body. */
 function textOf(blocks: unknown): string {
   if (!Array.isArray(blocks)) return ''
@@ -205,10 +144,6 @@ function textOf(blocks: unknown): string {
 }
 
 /** Read a numeric field defensively; absent or non-numeric reads as zero. */
-function num(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
-
 /** Read a string field defensively. */
 function str(value: unknown): string | null {
   return typeof value === 'string' ? value : null
@@ -232,15 +167,6 @@ function bump(state: FoldState, tool: string, field: 'calls' | 'errors'): void {
  */
 export function foldEvent(state: FoldState, event: SessionEvent): void {
   switch (event.type) {
-    case 'turn/end': {
-      state.turns += 1
-      const reason = (event.data as { reason?: { kind?: unknown } }).reason
-      state.turnEndReasons.push(typeof reason?.kind === 'string' ? reason.kind : 'unknown')
-      break
-    }
-    case 'step/end':
-      state.steps += 1
-      break
     case 'tool/call': {
       const data = event.data as { callId?: unknown; name?: unknown }
       const name = typeof data.name === 'string' ? data.name : '<unnamed>'
@@ -251,47 +177,15 @@ export function foldEvent(state: FoldState, event: SessionEvent): void {
       break
     }
     case 'tool/result': {
-      const data = event.data as {
-        message?: { isError?: unknown; toolCallId?: unknown }
-        error?: { name?: unknown; code?: unknown }
-      }
+      const data = event.data as { message?: { isError?: unknown; toolCallId?: unknown } }
       const message = data.message
       const callId = typeof message?.toolCallId === 'string' ? message.toolCallId : undefined
       // The tool that issued the call owns the error count; the result carries only the call id.
       const issuedBy = callId === undefined ? undefined : state.pending.get(callId)
       if (callId !== undefined) state.pending.delete(callId)
-      const errored = message?.isError === true
-      state.lastResultErrored = errored
-      if (!errored) break
+      if (message?.isError !== true) break
       state.toolErrors += 1
       if (issuedBy !== undefined) bump(state, issuedBy, 'errors')
-      state.lastToolErrorCode = typeof data.error?.code === 'string' ? data.error.code : null
-      state.lastToolErrorName = typeof data.error?.name === 'string' ? data.error.name : null
-      break
-    }
-    case 'assistant/message': {
-      const data = event.data as {
-        message?: { content?: unknown }
-        usage?: {
-          inputTokens?: unknown
-          outputTokens?: unknown
-          cacheReadTokens?: unknown
-          cacheWriteTokens?: unknown
-        }
-        interrupted?: unknown
-      }
-      const text = textOf(data.message?.content)
-      if (text !== '') state.finalText = clip(text)
-      if (data.interrupted === true) state.interrupted = true
-      if (data.usage === undefined) {
-        state.unreportedSettlements += 1
-      } else {
-        state.sawAnyUsage = true
-        state.inputTokens += num(data.usage.inputTokens)
-        state.outputTokens += num(data.usage.outputTokens)
-        state.cacheReadTokens += num(data.usage.cacheReadTokens)
-        state.cacheWriteTokens += num(data.usage.cacheWriteTokens)
-      }
       break
     }
     case 'system/message':
@@ -365,27 +259,9 @@ function foldRequestHeader(state: FoldState, data: unknown): void {
 export function finishFold(state: FoldState): TrialObservations {
   return {
     trace: {
-      turns: state.turns,
-      steps: state.steps,
       toolCalls: state.toolCalls,
       toolErrors: state.toolErrors,
       byTool: state.byTool,
-      unansweredCalls: state.pending.size,
-      endedOnUnrecoveredError: state.toolErrors > 0 && state.lastResultErrored,
-      finalText: state.finalText,
-      lastToolErrorCode: state.lastToolErrorCode,
-      lastToolErrorName: state.lastToolErrorName,
-      usage: state.sawAnyUsage
-        ? {
-            inputTokens: state.inputTokens,
-            outputTokens: state.outputTokens,
-            cacheReadTokens: state.cacheReadTokens,
-            cacheWriteTokens: state.cacheWriteTokens,
-            unreportedSettlements: state.unreportedSettlements,
-          }
-        : null,
-      interrupted: state.interrupted,
-      turnEndReasons: state.turnEndReasons,
     },
     modelInput: {
       systemPrompt: state.modelInput.systemPrompt,

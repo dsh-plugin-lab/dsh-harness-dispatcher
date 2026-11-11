@@ -107,6 +107,14 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
   前台 run，trial 2 被**放过**、跑满 30.0s 记 `completed`，之后才停；改之后按停止 —— trial 1 正常
   `completed` 32.8s，trial 2 在 **10.6s** 处断掉记 `aborted`（`interrupted=true`、`timedOut=false`），
   请求 4 个只落 2 行，preset 无残留。
+- **宿主算过的改成抄**（2026-11-11 晚，**真机验过**）：`host` 层把宿主注册的投影原样导出，
+  `events.jsonl` 把受试体的事件逐字落盘，`trace` 从 12 个字段砍到 3 个（红线 **B30**）。
+  真机证据：一次 `sealed` + `fs` 的单 trial，`host.sessionStats` =
+  `turns 1 / steps 2 / llmMs 2965 / toolMs 43 / ttftMs 2438 / decodeMs 527`，
+  `tokenUsage.uncachedInputTokens`、`contextPressure.contextWindow`、`permissions`、
+  `subagentTiming` 都有值，`trace` 只剩 `toolCalls/toolErrors/byTool`，`recordSchema` = 5；
+  `events.jsonl` 11 行 47.7 KB。同一批里抓到一个缺陷：按 id 读 `ctx.sessions.get()` 在
+  `result` 结算后返回 `undefined`，第一版每个 trial 都记 `host: null` —— 改成留住 `Session` 对象。
 - **没验的**：无。
 
 ## 待办
@@ -127,6 +135,10 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 | 以为同名条目能盖掉继承来的技能 | 实测三次都**盖不掉**（落全局层、先到者赢）；再这么写就是假封闭 | `sealed` 不承诺遮技能，红线 **B19** |
 | 想靠 `inject: ['skills']` 拿 scope 绑定的注册表 | 那一行在 preset 里变 **PENDING**，`apply` 不执行也不报错 | 别注入它；`sealed` 只用 `tools` |
 | 以为 `startActivation` 的 `signal` 能停住子 agent | 它只管**受理之前**；超时只写标记、受试体照跑（实测 700ms 预算 → 15.5s、`completed`） | 要停就 `dispose()`，且只在结果 `aborted` 时写 `timedOut`，红线 **B23** |
+| 以为 `ctx.sessions.get(childId)` 能在 trial 结束后拿到 Session | `activation.result` **在 teardown 之后**才结算，那时它返回 `undefined`：第一版实测每个 trial 都记成 `host: null`，而事件全都正常落盘 | Session 对象从 `session/event` 回调留住，红线 **B30** |
+| 以为 `sessionProjections.stateOf(session, key)` 能读别人的投影 | 它已废弃，且只管**自己注册的**；`ProjectionHandle` 同理。读宿主维护的 `sessionStats` 只能走 `snapshot(session, keys)` | 用 `snapshot()`，红线 **B30** |
+| 自己折一份宿主已经折过的数 | 两个定义同一个名字：本仓数 `turn/end`，宿主数「至少有一个已关闭 step 的 turn」，记录与状态栏可以互相矛盾（**都不是 bug**） | 宿主算过的就抄；`trace` 只留投影给不出的三个计数，红线 **B30** |
+| 把原始事件当可选功能默认关 | 只有聚合值的记录**不可重算**，纪律 1 当场失效；而且开关默认关就永远没人打开 | `events.jsonl` 默认开，红线 **B30** |
 | 以为 `max_depth` 参数能让受试体再派活 | 上限来自**工具行自己的 `maxDepth`**；本机宿主默认 `0`，不写行配置就一个孙会话都起不来 | 在 harness 行里写 `maxDepth`，见[真机状态](.agents/notes/2026-11-11-harness-shape.md#7-真机状态2026-11-11宿主-022-rc1) |
 | 以为 persona 行是**追加**人设 | 它用同一个 section 名注册，**替换**部署人设：系统提示只涨几十字符，容易误判成没生效 | 比 `modelInput.systemPrompt.digest`，别拿长度判 |
 | 以为 `skills.register()` 过了就等于技能能用 | 注册只做**宽松**校验，加载正文时才要求 `source` 是字符串：目录里有它，`skill` 工具一调就报错（真机实测） | 注册对象带上 `source`，红线 **B24**（它真的调一次加载路径） |
@@ -162,7 +174,10 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
    需要改宿主才能测的东西，**说明它不是受试变量，是要上报的缺陷**。
 3. **不留全局副作用。** 临时 preset、故障门、探针租约都在 `finally` 里 dispose。
 4. **受试环境的失败记成数据，不是异常。** 子 agent 跑挂了是观测结果（`stopReason`）；只有本插件自己坏了才抛。
-5. **凭据、会话内容不进导出记录。** 只放结构化计数与短标签；prompt 原文另存且由调用方显式开启。
+5. **凭据不进记录；会话内容默认就在记录里，所以分享前要脱敏。** 结构化计数与短标签之外，
+   `run.json` 的 `task.prompt` 存 prompt 原文，`events.jsonl` 存受试体看到的完整事件（消息正文、
+   工具实参、工具返回）。**这是有意的**：只有聚合值的记录不可重算。代价是记录不等于可公开的样本 ——
+   凭据仍由纪律 6 挡在源头，而 prompt 与输出要不要外发是**使用者的决定**，不是这里的默认。
 6. **输入快照同等对待凭据。** run 目录里的 `harness.<ext>` 是逐字副本，行 config 能装 API key ——
    所以**harness 文件不许带凭据**。不写启发式扫密钥（会漏也会误报），靠声明 + 让副本可见。
 

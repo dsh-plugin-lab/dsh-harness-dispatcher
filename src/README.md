@@ -48,12 +48,16 @@
 | [trial.ts](trial.ts) | `runTrial` / `stoppedByBudget` / `TrialPlan` / `TrialOutcome` | `run` | **B23 / B28**（融合信号里始终有调用方的信号）+ `fold` 单测 |
 | [abort.ts](abort.ts) | `onceAborted` | `trial` | `abort` 单测 |
 | [jobs.ts](jobs.ts) | `jobOutcomeOf` + `JobRegistry` 等结构类型 | `tools/harness-run` | **B26 / B28**（`killed` / `failed` 分清；没抛的喊停也是 `killed`；`detail` 只放一行） |
-| [collector.ts](collector.ts) | `FoldCollector` | `run` | `fold` 单测 |
-| [fold.ts](fold.ts) | `foldEvent` / `finishFold` / `summarize` / `TrialObservations` | `collector`、`record` | **B4 / B7** + `fold` 单测 |
-| [record.ts](record.ts) | `openRun` / `stimulusRecord` / `TrialRecord` | 三个工具 | **B5 / B6** + `record` 单测 |
+| [collector.ts](collector.ts) | `FoldCollector` | `run` | `collector` 单测 |
+| [fold.ts](fold.ts) | `foldEvent` / `finishFold` / `summarize` / `TrialObservations` | `collector`、`record` | **B4 / B7 / B30** + `fold` 单测 |
+| [host.ts](host.ts) | `HOST_KEYS` / `readHost` / `HostRead` / `HostSnapshot` | `tools/harness-run`、`trial`、`record` | **B30** + `host` 单测 |
+| [record.ts](record.ts) | `openRun` / `stimulusRecord` / `TrialRecord` / `EVENTS_FILE` | 三个工具 | **B5 / B6 / B30** + `record` 单测 |
 
-`fold.ts` 是全仓最大的文件，也是最该保持纯函数的一个：它收事件、返确定性特征，
-不碰 `ctx`。**想在里面加「判断好坏」就是越界**（根 AGENTS 硬性纪律 1）。
+`fold.ts` 与 `host.ts` 是同一条边界的两个出口，别在其中一个里做另一个的事：
+**宿主已经算过的（turn/step 数、token、耗时、上下文、策略）走 `host.ts` 抄回来**，
+`fold.ts` 只算宿主不提供的（装配身份 `modelInput` + 逐工具计数 `trace`）。
+两个都碰不得 `ctx`：`host.ts` 只收一个已经拿到的 `Session`，服务查找在
+[tools/harness-run.ts](tools/harness-run.ts) 里做。**想在里面加「判断好坏」就是越界**（根 AGENTS 硬性纪律 1）。
 
 ## 装配
 
@@ -101,11 +105,11 @@ frontmatter 的 `name` / `description` / `author` / `metadata.source`），apply
 | `harness_inspect` 的三种用法（列 preset / 查 preset / 查 harness） | `subject.ts` 的 `presetList`/`presetSummaries` → 红线 **B21** → `tools/harness-inspect` 的输出 schema 与三个渲染分支 |
 | skill 正文 | [../skills/dsh-harness-dispatcher/SKILL.md](../skills/dsh-harness-dispatcher/SKILL.md) → 红线 **B22**（上限 + 事实清单 + 缺文件/空正文要响亮）→ `check:release` 断言它随包发布 → 改完真机确认它仍在技能目录里 |
 | 造工具 / 改工具的语义 | `tool.ts` 的 `toolSpecOf` → 红线 **B20** → [造工具与改工具](../docs/ARCHITECTURE.md#342-造工具与改工具dsh-harness-dispatchertool) → `package.json` 的 `exports` 与 `tsdown.config.ts` 的 `entry` |
-| run 目录的形状（新增落盘文件） | `record.ts` 的 `openRun` → [数据出口只有两个函数](../docs/ARCHITECTURE.md#44-数据出口只有两个函数) → 两个 README 的目录树 |
+| run 目录的形状（新增落盘文件） | `record.ts` 的 `openRun` → [数据出口只有三个函数，且都不做聚合](../docs/ARCHITECTURE.md#44-数据出口只有三个函数且都不做聚合) → 两个 README 的目录树 |
 | 工具目录新增一个键 | `catalog.ts` → 红线 **B1** → `catalogLine()` |
 | 给某个东西改名 | 红线 **B13/B14** 兜住源码与文档两侧 |
-| 导出记录的字段 | `record.ts` 的 `TrialRecord` → [数据出口只有两个函数](../docs/ARCHITECTURE.md#44-数据出口只有两个函数) |
-| 观测折叠的语义 | `fold.ts` → `fold` 单测 → [折叠的边界是硬的](../docs/ARCHITECTURE.md#43-折叠的边界是硬的) → 红线 B4/B7 |
+| 导出记录的字段 | `record.ts` 的 `TrialRecord` → [数据出口只有三个函数，且都不做聚合](../docs/ARCHITECTURE.md#44-数据出口只有三个函数且都不做聚合) |
+| 观测折叠的语义 | `fold.ts` → `fold` 单测 → [边界从「算不算」改成「谁已经算过」](../docs/ARCHITECTURE.md#43-边界从算不算改成谁已经算过) → 红线 B4/B7 |
 | 故障模式 | `fault.ts` + `gate.ts` 三条管线 → [三种故障是三个不同的实验](../docs/ARCHITECTURE.md#23-三种故障是三个不同的实验不是同一个设置的三个档) |
 | 超时 / 取消（停住一个正在跑的受试体） | `trial.ts` 的 `onceAborted` 监听 → [停止一个正在跑的受试体](../docs/ARCHITECTURE.md#53-停止一个正在跑的受试体) → 红线 **B23 / B28** |
 | 后台 / 长跑（`ctx.jobs`） | `jobs.ts` 的结构类型 + `run.ts` 的执行体 → [后台通道](../docs/ARCHITECTURE.md#51-后台通道同一个工具的一个开关) → 红线 **B26** |

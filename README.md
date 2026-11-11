@@ -27,9 +27,13 @@ one.
     is the deliverable.
 - **A fault gate** — inject `deny` / `fail` / `latency` into specific tools, for the subject only, with
   no change to any other agent.
-- **Two folds** — what the subject *did* (`trace`: turns, steps, tool calls, per-tool errors, token
-  accounting, final text) and what it *was given* (`modelInput`: system-prompt digest, tool names and
-  schema digest, actual route). Pure facts; no judgement.
+- **The host's own numbers, exported** (`host`) — whatever the host registered among a fixed list of
+  projection keys: timing and counts, the four disjoint token buckets, context pressure against the
+  window, the policy the subject ran under, and the harness behaviours (delegation, planning, todos).
+  Copied back unchanged; adding a host projection is one string in the list.
+- **Two views of our own** — what the subject *was given* (`modelInput`: system-prompt digest, tool
+  names and schema digest, actual route — the evidence that two runs applied the same harness) and the
+  three counts no projection offers (`trace`: tool calls, tool errors, per-tool split).
 - **A skill registered by the plugin** (`dsh-harness-dispatcher`, same name as the package) carrying that
   loop and the traps that each cost an experiment, so an agent finds them without reading source.
 
@@ -47,9 +51,16 @@ the fallback for a context with no profile file at all.
 <outputRoot>/<runId>/
   run.json          # run identity, task, stimulus identity, probed capability surface
   harness.<ext>     # verbatim copy of the harness under test (harness.json for the shortcut)
-  trials.jsonl      # one line per trial: the stimulus, the outcome, both folds
+  trials.jsonl      # one line per trial: the stimulus, the outcome, the host's numbers, our two views
+  events.jsonl      # the subject's committed Session events, verbatim: the bottom layer
   README.txt        # for whoever reads the data: which field to compare
 ```
+
+`events.jsonl` is on by default and `record_events: false` turns it off. It is the reason a record can
+be re-folded under a definition this plugin never had, and it holds the things no aggregate keeps: tool
+arguments, tool results, injected context, per-step timestamps, retries, compaction. It also dominates
+the directory — measured 47.7 KB for one trivial one-step trial, of which 35.4 KB is `request/header`
+carrying the tool schemas verbatim. It holds prompts and model output as the subject saw them.
 
 **The copy in the run directory is evidence, not the thing that ran.** What gets mounted is the source
 file where it sits — so the two appear side by side, and only the source is worth editing. Runs that

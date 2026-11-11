@@ -18,7 +18,7 @@ import { parameterSchemaSpecToJsonSchema, validateArgs } from '@deepseek-ai/dsh-
 import { CATALOG, DEFAULT_TOOLS, TOOL_CATALOG, TOOL_KEYS } from '../src/catalog.ts'
 import { resolveConfig } from '../src/config.ts'
 import { imageDeliveryProblem, resolvePrompt } from '../src/attachments.ts'
-import { foldEvent, emptyFold, finishFold, summarize } from '../src/fold.ts'
+import { emptyFold, finishFold, foldEvent, summarize } from '../src/fold.ts'
 import { normalizeFaults } from '../src/fault.ts'
 import { harnessRows, harnessLabel, sealedRows } from '../src/harness.ts'
 import { jobOutcomeOf } from '../src/jobs.ts'
@@ -279,7 +279,12 @@ describe('B6 — a run leaves nothing behind', () => {
 })
 
 describe('B7 — a missing measurement is recorded as missing, not as zero', () => {
-  it('leaves usage null when the adapter reported nothing', () => {
+  it('records no token buckets of its own, because the host reports them and it does not', () => {
+    // The rule survived, its home moved. This fold used to sum four buckets and keep an
+    // `unreportedSettlements` counter to say "the adapter did not report" — a distinction that only
+    // matters if you are the one summing. The host's `tokenUsage` projection now carries the buckets,
+    // and `hostUnavailableReason` carries the "could not read" case, so inventing a second set of
+    // totals here would only create a second set of definitions to disagree with.
     const observations = summarize([
       {
         type: 'assistant/message',
@@ -288,37 +293,17 @@ describe('B7 — a missing measurement is recorded as missing, not as zero', () 
         data: { turn: 1, step: 1, message: { role: 'assistant', content: [] }, stream: [] },
       } as unknown as SessionEvent,
     ])
-    expect(observations.trace.usage).toBeNull()
+    expect(JSON.stringify(observations.trace)).not.toContain('Tokens')
   })
 
-  it('counts unreported settlements alongside the totals', () => {
-    const events = [
-      {
-        type: 'assistant/message',
-        seq: 1,
-        time: 1,
-        data: {
-          turn: 1,
-          step: 1,
-          message: { role: 'assistant', content: [] },
-          stream: [],
-          usage: { inputTokens: 5, outputTokens: 6 },
-        },
-      },
-      {
-        type: 'assistant/message',
-        seq: 2,
-        time: 2,
-        data: { turn: 1, step: 1, message: { role: 'assistant', content: [] }, stream: [] },
-      },
-    ] as unknown as SessionEvent[]
-    expect(summarize(events).trace.usage).toEqual({
-      inputTokens: 5,
-      outputTokens: 6,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      unreportedSettlements: 1,
-    })
+  it('names the reason a host read produced no values, instead of a bare null', () => {
+    // "No projection registry in this profile" and "the Session was already torn down" are different
+    // findings, and both are different from "the host computed zero".
+    const host = sources().get('src/host.ts') ?? ''
+    expect(host).toContain('reason')
+    expect(host).toContain('no projection registry')
+    const record = sources().get('src/trial.ts') ?? ''
+    expect(record).toContain('hostUnavailableReason')
   })
 
   it('distinguishes a cleared prompt from a missing one', () => {
@@ -1522,5 +1507,67 @@ describe('B29 — nothing is bound to one machine', () => {
     expect(readme).toContain('$DSH_HOME/harness-dispatcher/runs')
     expect(readme).toContain('$DSH_HOME/profiles/<name>/harness')
     expect(readme).not.toContain('~/.dsh/harness-dispatcher/harness')
+  })
+})
+
+describe('B30 — what the host already computed is copied, not recomputed', () => {
+  /**
+   * The rule: a figure the host maintains must come from the host, because a second fold is a second
+   * definition of the same word.
+   *
+   * Measured 2026-11-11 on `0.2.2-rc.1`. This bench counted `turn/end` events and called it `turns`;
+   * `sessionStats.turns` counts *turns carrying at least one closed step*. Both landed in records about
+   * the same sessions, so a reader comparing two runs could find two different `turns` for one trial and
+   * have nothing to choose between them. `usage` was the same story with a different name —
+   * `inputTokens` here, `uncachedInputTokens` there.
+   *
+   * The two survivors are the ones the host genuinely does not compute: the assembled-input identity
+   * (`modelInput`) and per-tool counts, which no projection among the host's twenty-five offers.
+   */
+  it('derives no count the host reports, and keeps only what it cannot', () => {
+    const names = Object.keys(finishFold(emptyFold()).trace).sort()
+    expect(names).toEqual(['byTool', 'toolCalls', 'toolErrors'])
+    // The specific duplicates, by name: a `turns` here would collide with `sessionStats.turns`.
+    for (const retired of [
+      'turns',
+      'steps',
+      'usage',
+      'finalText',
+      'turnEndReasons',
+      'interrupted',
+    ]) {
+      expect(names, `${retired} duplicates a host projection`).not.toContain(retired)
+    }
+  })
+
+  it('reads the host through snapshot(), which is the only face that works on another unit', () => {
+    // `stateOf(session, key)` is deprecated and answers only for the caller's own registration; a
+    // `ProjectionHandle` likewise. Reading `sessionStats` therefore cannot go through either.
+    const host = stripComments(sources().get('src/host.ts') ?? '')
+    expect(host).toContain('.snapshot(')
+    expect(host).not.toContain('.stateOf(')
+    // The key list is the contract: adding a projection is one string, not a new field on the record.
+    expect(host).toContain('HOST_KEYS')
+    expect(host).toContain("'sessionStats'")
+  })
+
+  it('reads against the Session object, because the store has already forgotten the id', () => {
+    // Measured: `activation.result` settles after teardown, so `ctx.sessions.get(childId)` answered
+    // undefined on every trial while events were landing normally, and every record said `host: null`.
+    const collector = stripComments(sources().get('src/collector.ts') ?? '')
+    expect(collector).toMatch(/entry\.session = session/)
+    expect(collector).toContain('sessionOf(')
+    const trial = stripComments(sources().get('src/trial.ts') ?? '')
+    expect(trial).toContain('collector.sessionOf(')
+  })
+
+  it('carries the raw log, so a record can be re-folded under a definition we never had', () => {
+    // Discipline 1 says the product must be recomputable under another definition. Aggregates alone are
+    // not: they freeze today's reading of the data. This is what makes that promise keepable.
+    const record = stripComments(sources().get('src/record.ts') ?? '')
+    expect(record).toContain('EVENTS_FILE')
+    const tool = stripComments(sources().get('src/tools/harness-run.ts') ?? '')
+    // Default on, and the default is spelled out rather than left to a schema default.
+    expect(tool).toContain('args.record_events ?? true')
   })
 })

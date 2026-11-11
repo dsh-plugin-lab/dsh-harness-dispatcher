@@ -85,7 +85,7 @@ const OUTPUT_SCHEMA = {
     // say whether the rest were skipped or the run broke.
     stopped: { type: 'boolean' },
     jobId: { type: 'string' },
-    // One entry per trial, foreground only. `stopReason` is the outcome; the folded views are in the file.
+    // One entry per trial, foreground only. `stopReason` is the outcome; everything else is in the file.
     outcomes: {
       type: 'array',
       items: {

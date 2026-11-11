@@ -352,29 +352,55 @@ ownEvents()      @deprecated … new calls are prohibited
    「每个已提交事件驱动每个单元、返回同一引用表示无关」，产出是**可发布的会话状态**；
    而本仓需要的是「跑到结束读一次、读完就扔」的一次性折叠，出自同一个进程。
 
-**所以**：本仓用 `ctx.on('session/event')` 自己折叠（[src/fold.ts](../src/fold.ts) 的 reducer +
-[src/collector.ts](../src/collector.ts) 的布防），按 session id 布防/撤防。等哪天要
-**给 UI 做实时评测面板**，那才是同时注册一个 projection 的时机 ——
+**所以**：本仓**不注册自己的** Projection 单元，用 `ctx.on('session/event')` 自己折叠
+（[src/fold.ts](../src/fold.ts) 的 reducer + [src/collector.ts](../src/collector.ts) 的布防），
+按 session id 布防/撤防。等哪天要**给 UI 做实时评测面板**，那才是同时注册一个 projection 的时机 ——
 记录本身不依赖它。
 
 > 这条值得单独记：**「原生的」不等于「合适的」**。Projection 是原生接缝、写起来也漂亮，
-> 但它的三条硬性质（zod 实例、client-visible 门槛、发布语义）每一条都跟探针的用法冲突。
+> 但它的三条硬性质（zod 实例、client-visible 门槛、发布语义）每一条都跟「自己造一个探针」冲突。
 
-### 4.3 折叠的边界是硬的
+**但「不注册」不等于「不用」。** 上面三条讲的是**自己当一个单元**的代价；**读别人已经注册好的单元**
+完全是另一件事，而恰恰是第 4 节现在的主干：`ctx.sessionProjections.snapshot(session, HOST_KEYS)`
+把宿主维护的 `sessionStats` / `tokenUsage` / `contextPressure` 等原样取回
+（[src/host.ts](../src/host.ts)）。这条路绕开了上面三条 —— 不递 schema、不需要事件推送、不发布任何东西。
 
-| 特征 | 在进程里算吗 | 依据 |
+两个坑，都实测过：
+
+- **`stateOf(session, key)` 已废弃**，而且只能读自己注册的。要读别人的必须走 `snapshot()`。
+  注册返回的 `ProjectionHandle` 也只管自己那一份。
+- **拿 `Session` 对象，不要按 id 查。** `activation.result` 只在 teardown 之后才结算，那时
+  `ctx.sessions.get(childId)` 已经返回 `undefined` —— 实测第一次真机跑，每个 trial 都记成
+  `host: null`，而它的事件全都正常落盘。`Session` 对象在每次 `session/event` 回调里都有，
+  所以由 [src/collector.ts](../src/collector.ts) 留住这份引用，投影在内存日志上惰性折叠。
+
+### 4.3 边界从「算不算」改成「谁已经算过」
+
+最初这张表是按「在进程里算不算」划的。那个轴不够：**宿主已经算好并维护着的东西，我们再算一遍不是勤快，
+是造第二个定义。** 实测过代价 —— 本仓数 `turn/end` 事件并叫它 `turns`，而宿主的 `sessionStats.turns`
+数的是「至少有一个已关闭 step 的 turn」，于是记录和状态栏对同一个会话给出两个不同的 `turns`，
+两边都没错。
+
+现在的轴是三层，从上到下越来越「不经手」：
+
+| 层 | 来源 | 谁维护 |
 |---|---|---|
-| turn/step 数、工具调用数、按工具名的错误数、未应答调用 | **算** | 事件里直接有 |
-| token（`assistant/message.data.usage` 累加） | **算，但缺失要记成缺失** | `usage` 可选；把「适配器没说」记成 0 会让省略 usage 的路由看起来无限便宜 |
-| 「报了错还不如自己说成功」 | **只记两个原始事实** | 记 `lastToolErrorCode` 与 `finalText`，判定留给外部 |
-| 「答案对不对」 | **不算** | 需要标准答案 / 评分器 |
+| `host` | 宿主已注册的投影，**原样抄回** | 宿主。新增一个投影 = `HOST_KEYS` 加一个字符串 |
+| `events.jsonl` | 受试体的已提交事件，**逐字** | 宿主。新增事件类型自动就有 |
+| `modelInput` / `trace` | 本仓自己折叠 | **我们**，且只剩宿主不提供的：装配身份 + 逐工具计数 |
 
-最后两行是**硬边界**：进程里一旦开始做语义判断，同一份日志换个人重算就得到不同数，
-「确定性特征提取」这个前提就没了。
+判据：**「宿主算过吗」**——算过就抄，没算过再看「一个字段够不够」，够才自己算。
+`modelInput` 留下是因为它是「两次跑是不是同一份装配」的判据，那是评测台的存在理由；
+`trace` 留下三个计数是因为宿主的 25 个投影里没有一个给逐工具计数（`0.2.2-rc.1` 实测）。
 
-### 4.4 数据出口只有两个函数
+| 仍然不做 | 依据 |
+|---|---|
+| 「答案对不对」 | 需要标准答案 / 评分器 |
+| 任何均值、区间、显著性 | 口径会变，产物必须能被另一个口径重算 —— 这正是 `events.jsonl` 的存在理由 |
 
-`openRun(root, meta)` / `append(record)`（[src/record.ts](../src/record.ts)）。
+### 4.4 数据出口只有三个函数，且都不做聚合
+
+`openRun(root, meta)` / `append(record)` / `appendEvents(trial, events)`（[src/record.ts](../src/record.ts)）。
 没有查询、没有聚合、没有统计。**导出面一旦有 API，就会有人往里加 `mean()`。**
 把聚合挡在仓外是纪律，不是偷懒。
 
@@ -384,9 +410,17 @@ ownEvents()      @deprecated … new calls are prohibited
 <outputRoot>/<runId>/
   run.json          # { runId, startedAt, recordSchema, stimulus, task, surface, note }
   harness.<ext>     # harness 的逐字副本（捷径形式是 harness.json）
-  trials.jsonl      # 每 trial 一行：stimulus、结果、两条折叠视图（trace / modelInput）
+  trials.jsonl      # 每 trial 一行：stimulus、结果、宿主的数字、我们的两个视图
+  events.jsonl      # 受试体的已提交会话事件，逐字（`record_events: false` 可关）
   README.txt        # 给读数据的人：该比 stimulus.fingerprint
 ```
+
+**`events.jsonl` 默认开。** 它是「产物必须能被另一个口径重算」这条纪律的物质基础：只有聚合值的记录
+不可重算，今天不记 TTFT、明天发现它最关键，就回不去了。它也装着聚合层留不住的东西（工具实参、
+工具返回、被注入的上下文、逐 step 时间戳、重试、压缩 —— 宿主的 25 个投影里没有一个暴露压缩，
+`0.2.2-rc.1` 实测）。
+实测体积：一次单 step 的琐碎 trial **47.7 KB**，其中 35.4 KB 是 `request/header` 里逐字的工具 schema。
+**不优化它**：底层那份是产物，压缩它是砍功能。
 
 **两个根，分开是设计不是巧合。** `outputRoot` 默认 `$DSH_HOME/harness-dispatcher/runs`
 （`$DSH_HOME` 未设置时即 `~/.dsh/…`），走宿主的 `dshHomePath()` —— 不是 `homedir() + '.dsh'`，
@@ -416,7 +450,8 @@ harness 文件 / 捷径 ──捕获──→ 字节 + 摘要 + 行  ← 副本�
                                                                   → finally 里 dispose 全部（B6）
 ```
 
-`openRun` 写 `run.json` + `harness.<ext>` + `README.txt`，`append()` 写 `trials.jsonl`；
+`openRun` 写 `run.json` + `harness.<ext>` + `README.txt`，`append()` 写 `trials.jsonl`，
+`appendEvents()` 写 `events.jsonl`（惰性创建：关掉时不该留一个空文件，那会读成「受试体什么都没做」）；
 `discard()` 在**一条记录都没有**时删掉整个目录。
 
 **副本是证据，不是执行体。** 挂载用的是**操作者那份原文件**：宿主把 include 的解析基准设成
