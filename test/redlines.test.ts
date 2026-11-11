@@ -13,6 +13,7 @@ import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync }
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { parameterSchemaSpecToJsonSchema, validateArgs } from '@deepseek-ai/dsh-tools'
 import { CATALOG, DEFAULT_TOOLS, TOOL_CATALOG, TOOL_KEYS } from '../src/catalog.ts'
 import { imageDeliveryProblem, resolvePrompt } from '../src/attachments.ts'
 import { foldEvent, emptyFold, finishFold, summarize } from '../src/fold.ts'
@@ -21,6 +22,7 @@ import { harnessRows, harnessLabel, sealedRows } from '../src/harness.ts'
 import { jobOutcomeOf } from '../src/jobs.ts'
 import { normalizeShortcut, shortcutRows } from '../src/shortcut.ts'
 import { SKILL_NAME, readSkill, registerSkill, splitFrontmatter } from '../src/skill.ts'
+import { ATTACHMENTS_PARAMETER } from '../src/tools/params.ts'
 import { summaryLine } from '../src/run.ts'
 import { presetIdFor, presetSummaries, rowWarnings } from '../src/subject.ts'
 import { toolSpecOf } from '../src/tool.ts'
@@ -1027,6 +1029,29 @@ describe('B27 — an attachment never degrades silently', () => {
     const record = sources().get('src/record.ts') ?? ''
     expect(record).toMatch(/identified, not copied/)
     expect(record).toMatch(/handle\s+line naming a read-only path/)
+  })
+
+  it('publishes an attachments parameter the host can actually validate', () => {
+    // The schema is model-facing, so a malformed `items` does not fail here — it fails on every call,
+    // as an argument error the caller cannot diagnose. Compiled by the host's own compiler.
+    const spec = {
+      ...ATTACHMENTS_PARAMETER,
+      prompt: { type: 'string' as const, required: true as const },
+    }
+    const compiled = parameterSchemaSpecToJsonSchema(spec)
+    const items = (compiled.properties.attachments ?? {}) as {
+      type?: string
+      items?: { additionalProperties?: boolean; required?: string[]; properties?: object }
+    }
+    expect(items.type).toBe('array')
+    // Closed per item: an extra key is a caller mistake, not something to pass through silently.
+    expect(items.items?.additionalProperties).toBe(false)
+    expect(Object.keys(items.items?.properties ?? {})).toEqual(['path'])
+    expect(validateArgs(spec, { prompt: 'x', attachments: [{ path: 'a.png' }] })).toEqual([])
+    expect(validateArgs(spec, { prompt: 'x', attachments: [{}] })).not.toEqual([])
+    expect(validateArgs(spec, { prompt: 'x', attachments: [{ path: 'a', extra: 1 }] })).not.toEqual(
+      [],
+    )
   })
 
   it('says which half of the delivery a file attachment lost', () => {
