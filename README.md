@@ -148,6 +148,10 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 `check` is exactly the set of steps CI runs, and a red line holds that equivalence: it once ran the
 first four, so a green laptop pushed red.
 
+Commits also autofix format and lint through [.pre-commit-config.yaml](.pre-commit-config.yaml), using the
+`prettier` / `eslint` already in `node_modules`. Enable once per clone with `pre-commit install`
+(`pre-commit` is a separate CLI, e.g. `uv tool install pre-commit`).
+
 The host-level path — actually mounting, starting a subject, arming a fault — is **not** covered by
 `check`, and installing a plugin does not prove it ran. Those steps are manual and written down in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#6-真机验证不属于-pnpm-run-check); the current state of what

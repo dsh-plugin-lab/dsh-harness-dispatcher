@@ -136,6 +136,10 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 
 `check` 就是 CI 跑的那六步，有一条红线钉住这个等价性：它曾经只跑前四项，于是本机全绿、推上去红了。
 
+提交时还会自动修格式与 lint，配置在 [.pre-commit-config.yaml](.pre-commit-config.yaml)，用的是
+`node_modules` 里已有的 `prettier` / `eslint`。每个克隆 `pre-commit install` 装一次
+（`pre-commit` 本体另装，如 `uv tool install pre-commit`）。
+
 宿主层那条路 —— 真的挂载、真的拉起受试体、真的命中故障 —— **不在** `check` 覆盖范围内，
 而装上插件不等于它跑过。这些步骤是人工的，写在
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#6-真机验证不属于-pnpm-run-check)；验到哪一步了在
