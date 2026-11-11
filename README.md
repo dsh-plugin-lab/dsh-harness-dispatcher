@@ -15,6 +15,10 @@
     <a href="https://github.com/dsh-plugin-lab/dsh-harness-dispatcher/actions/workflows/ci.yml"><img src="https://github.com/dsh-plugin-lab/dsh-harness-dispatcher/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat" alt="MIT license"></a>
   </p>
+
+  <p>
+    <strong><a href="README.md">English</a></strong> · <a href="README_zh.md">简体中文</a>
+  </p>
 </div>
 
 ---
@@ -24,20 +28,26 @@ route — at least as much as of its model. This plugin makes that assembly a co
 fixed task, one harness at a time, one JSONL line per trial.
 
 It computes no statistics. Means, intervals and significance belong to R or Python, outside this
-repository, because the analysis口径 changes and the records must stay recomputable under a different
-one.
+repository, because the definition of an analysis changes and the records must stay recomputable under a
+different one.
 
 ## What it offers
 
 - **Three tools forming one zero-cost loop.** `harness_inspect` mounts, audits and probes without
   starting an agent or spending a token; `harness_export` writes a preset's rows out as a runnable file;
   `harness_run` runs the task and leaves a self-sufficient record directory behind.
+- **Discovery before anything else.** `harness_inspect` with no arguments lists the presets **and** the
+  model routes this host has, both read from local registries. `provider` alone then names one route's
+  models — the single read that costs an adapter call, and the way to find out which models declare
+  `image` input before attaching one.
 - **A fault gate** — inject `deny` / `fail` / `latency` into named tools, for the subject only, with no
   change to any other agent.
 - **The host's own numbers, exported** (`host`) — whatever the host registered among a fixed list of
   projection keys, copied back unchanged. Adding a host projection is one string in that list.
 - **Two views this plugin folds**: what the subject *was given* (`modelInput`, the evidence that two
   runs applied the same harness) and the three counts no projection offers (`trace`).
+- **The subject's answer, whole** (`output`), never a prefix: a cut cannot be recomputed, and the raw
+  layer below it is already larger by an order of magnitude.
 - **The subject's raw event log** (`events.jsonl`, on by default) — so a record can be re-folded under
   a definition this plugin never had.
 - **A skill registered by the plugin** (`dsh-harness-dispatcher`, same name as the package) carrying
@@ -118,6 +128,10 @@ what was tried and rejected — is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.m
 
 - **Inspect before you run.** It is free, and it is the same resolution `harness_run` uses: whatever
   the inspection says about a harness, the run applies exactly that.
+- **Discover two things for free, one thing for an adapter call.** The bare `harness_inspect` is local;
+  asking for a route's models is not, because only the adapter knows whether answering means asking its
+  endpoint. Ask it anyway before attaching an image — it is the only place that says which models take
+  one.
 - **A harness is a delta unless you seal it.** Mounted as a preset it sits inside the host, so by
   default the subject also inherits every tool the host mounts for itself. `sealed: true` masks those.
   Use it whenever the tool set is the variable; leave it off when the question is "does this harness

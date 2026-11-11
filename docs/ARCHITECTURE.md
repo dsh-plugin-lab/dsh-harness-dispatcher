@@ -422,6 +422,16 @@ ownEvents()      @deprecated … new calls are prohibited
 实测体积：一次单 step 的琐碎 trial **47.7 KB**，其中 35.4 KB 是 `request/header` 里逐字的工具 schema。
 **不优化它**：底层那份是产物，压缩它是砍功能。
 
+**同一段实测顺带否掉了 `output` 的截断。** 这个字段曾经截在 4 000 字符，理由是「记录是证据不是抄本」——
+那句话在 `events.jsonl` 出现之前成立，那时它是答案唯一的存放处。现在不是了：底层日志大一个数量级还
+不设限，而 `output` 是读者第一眼看的东西，被 `slice` 掉之后**没有任何标记**，一个 4 000 字的长答案和一段
+被砍断的答案形状完全相同；调用方一旦关掉 `record_events`，它就是唯一副本。切掉的部分重算不回来，正好
+违反 §4.4 开头那条纪律。所以现在整段保存 —— 实测一次要求输出 6 000 字符的 trial，`output` 长度
+**5 800**（旧实现会停在 4 000）。
+
+**prompt 仍然只存摘要**，这个不对称是故意的：prompt 每个 trial 一字不差地重复，N 个 trial 就是 N 倍；
+而每个答案本身就是被测量的那个量。
+
 **两个根，分开是设计不是巧合。** `outputRoot` 默认 `$DSH_HOME/harness-dispatcher/runs`
 （`$DSH_HOME` 未设置时即 `~/.dsh/…`），走宿主的 `dshHomePath()` —— 不是 `homedir() + '.dsh'`，
 否则一个 `$DSH_HOME` 隔离实例会把记录写进默认实例的树里。
@@ -474,10 +484,32 @@ harness 文件所在目录，而 run 目录不在任何解析基准上，挂副�
 `preset` / `harness_export` 都得先知道一个 id，而没人告诉过你 —— 实测这台机器的默认是 `cordis`，
 和文档里常见的 `standard` 不是同一个。
 
+**同一个缺口在路由那一侧也曾经存在**：`provider`/`model` 是请求级参数，而没有任何一格告诉过你有哪些
+路由、某条路由有哪些模型 —— 要带图就得先正确猜一个「收图」的模型名。所以无参那一格现在同时列出
+**provider route**，再加一个入口 `{ provider }` 列出该路由的模型。
+
+**为什么是两格而不是一格**，判据在宿主的签名里，不在「方便」里：
+
+| 调用 | 签名 | 成本 |
+|---|---|---|
+| `listProviders()` | `LlmProviderInfo[]` —— **同步**，宿主注释原文是 "detached provider metadata in registration order" | 读注册表，什么都不花 |
+| `listModels(provider)` | `Promise<LlmModelInfo[]>` —— **异步**，先 `registration(provider)` 再 `await adapter.listModels()` | 由适配器决定；`resolveModelInfo` 那个可选 `signal` 的注释写的就是 "adapter-owned" |
+
+把它们并进同一个入口，等于让每个只想问「有哪些 preset」的调用者去等一个适配器，而只要有一条路由慢或
+不通，纯本地的那半边会跟着一起废掉。**两条入口都真机验过**（`0.2.2-rc.1`）：无参列出 4 preset + 8 路由；
+`{provider: "cpa-trae"}` 列出 7 个模型，其中**只有 1 个声明 `image`** —— 这正是这个入口存在的理由。
+
+两条实读出来的坑，都写进了输出措辞：
+
+- **`listModels` 报空不等于这条路由没有模型。** `dsh-llm-pi-ai` 在凭据缺失时 `return []` 而不是抛错
+  （`lib/index.js` 里 `MISSING_CREDENTIAL` 那个分支），所以 0 只能归因给适配器，不能归因给路由。
+- **`inputModalities` 缺省是「未知」，不是「只收文本」。** 两者在附图闸门里的后果不同（§3.4.3），所以
+  列表把缺省渲染成 `input unknown`，绝不折叠成 `input text`。
+
 | 面 | 形态 | 阶段 |
 |---|---|---|
 | `harness_run` | 工具：任务 + 受试 harness + trial 数 → 结构化句柄 | **已实现** |
-| `harness_inspect` | 挂载 + 审计 + 探针（`acquireScope`），**零模型成本**；不带参数时**列出本机 preset**（默认的排第一，坏掉的那条连原因一起列出，不隐藏）；判定分两级：`problems`（跑不成/不是要做的实验）与 `warnings`（挂载了但不出力） | **已实现** |
+| `harness_inspect` | 挂载 + 审计 + 探针（`acquireScope`），**零模型成本**；四个入口按成本排序：无参（列 preset + provider）、`{provider}`（列该路由的模型）、`preset`、`harness`；判定分两级：`problems`（跑不成/不是要做的实验）与 `warnings`（挂载了但不出力） | **已实现** |
 | `harness_export` | `readDocument()` → 一份能跑的 harness 文件 | **已实现** |
 | 使用说明 skill | [src/skill.ts](../src/skill.ts)，代码注册、`skills` 服务可选 | **已实现**（注册对象要带 `source`，否则只列得出、加载不了，红线 **B24**） |
 | 造工具 / 改工具 | preset 行 [src/tool.ts](../src/tool.ts)：一份文件定义或覆盖一个工具 | **已实现** |

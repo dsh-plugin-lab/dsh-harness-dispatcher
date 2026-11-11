@@ -105,8 +105,9 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
   覆盖它，所以磁盘记录是唯一的账（红线 **B28**）。
   真机证据（同一条命令跑了两次，两次结论相反，这就是设计改动的对照）：改之前按停止 —— 4 个 trial 的
   前台 run，trial 2 被**放过**、跑满 30.0s 记 `completed`，之后才停；改之后按停止 —— trial 1 正常
-  `completed` 32.8s，trial 2 在 **10.6s** 处断掉记 `aborted`（`interrupted=true`、`timedOut=false`），
-  请求 4 个只落 2 行，preset 无残留。
+  `completed` 32.8s，trial 2 在 **10.6s** 处断掉记 `aborted`（`timedOut=false`），
+  请求 4 个只落 2 行，preset 无残留。**`interrupted` 这个字段已经不在了**（B30 连同 `turnEndReasons`
+  一起从 `trace` 撤掉），别照旧描述去找它 —— 区分「预算到点」与「被停」只看 `timedOut`。
 - **宿主算过的改成抄**（2026-11-11 晚，**真机验过**）：`host` 层把宿主注册的投影原样导出，
   `events.jsonl` 把受试体的事件逐字落盘，`trace` 从 12 个字段砍到 3 个（红线 **B30**）。
   真机证据：一次 `sealed` + `fs` 的单 trial，`host.sessionStats` =
@@ -115,12 +116,40 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
   `subagentTiming` 都有值，`trace` 只剩 `toolCalls/toolErrors/byTool`，`recordSchema` = 5；
   `events.jsonl` 11 行 47.7 KB。同一批里抓到一个缺陷：按 id 读 `ctx.sessions.get()` 在
   `result` 结算后返回 `undefined`，第一版每个 trial 都记 `host: null` —— 改成留住 `Session` 对象。
+- **发现分两个入口**（2026-11-11 晚，**真机验过**）：无参 `harness_inspect` 列出 preset **和** model
+  route（两者都读本机注册表），`{ provider }` 单独列出该路由的模型（适配器可能去问远端）。拆开的判据
+  是宿主签名不同：`listProviders(): LlmProviderInfo[]` **同步**，`listModels(): Promise<…>` **异步**。
+  真机证据：无参 → 4 个 preset + 8 条路由；`{provider:"cpa-trae"}` → 7 个模型，**其中只有 1 个
+  `input text+image`**；不存在的 provider → 一行 problem 而不是抛错。
+  同批读到两个会骗人的细节：`dsh-llm-pi-ai` 的 `listModels` 在**凭据缺失时 `return []`**，所以「0 个
+  模型」归因给适配器、不能归因给路由；`DEFAULT_INPUT = ['text']`，即没声明 `input` 的路由解析成**不收图**。
+- **答案整段保存**（2026-11-11 晚，**真机验过**）：`output` 不再截在 4 000 字符（红线 **B4**）。
+  真机证据：要求输出 6 000 字符的 trial，`output` 长度 **5 800**，旧实现会停在 4 000。
+- **附件的第二条边界也验了**（2026-11-11 晚，**真机验过**）：`deepseek-official/deepseek-v4-pro`
+  是 `input text`，带图开跑被**开跑前**拒掉，文案是「does not declare image input … would replace every
+  image with a placeholder line」，且 `runs/` 与 attachments 目录都没多出新文件（B27 / B3）。
 - **没验的**：无。
 
 ## 待办
 
-- [ ] 附件的第二条边界：在一个**不声明 `image` 输入的**路由上带图，确认拒绝文案（本机只有一条
-      声明了图的可用路由，这半边只能等换路由时补）。
+- [ ] 无。
+
+## skill 正文的判据：动作，不是特性
+
+`skills/*/SKILL.md` 每次加载都要付一次上下文，读者是**即将调用这几个工具的 agent**。一条事实要进来，
+必须**同时**过两关：
+
+1. **读者据此能改变动作** —— 改变传什么参数，或改变怎么读记录。只是「这个系统是这样的」属于特性，
+   读者知道也没用：它既不能预防，也不能利用。
+2. **工具 schema 里没有** —— 工具描述和参数说明在工具可用时总在上下文里，重复一遍是白付钱。
+
+过不了第 1 关的，去它该去的地方：维护与坑 → 本文件；依据与取舍 → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)；
+过程 → [.agents/notes/](.agents/notes/)。
+
+**已经按这条清掉四类**（2026-11-11 晚）：操作者按停止的叙事（agent 不停自己那一轮）、
+被切断的前台调用返回什么错误（它出现时自己就说清了）、`interrupted` 字段（B30 已从记录里撤掉，
+skill 还在教人去找）、`output` 不截断这件事（改动说明不是用法）。红线 **B22** 的第二条 `it`
+正面钉着这几条「不许回来」，并断言知识仍在维护层活着。
 
 ## 活跃坑
 
@@ -162,7 +191,7 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 |---|---|
 | 工具的名字 / 数量 / 参数 schema | [src/tools/](src/tools/) 的注册处 → [能力面](docs/ARCHITECTURE.md#5-能力面) → 红线 B11/B14 |
 | 新手能不能上手 | `harness_inspect` 不带参数的列表分支 → 红线 **B21** → [skills/dsh-harness-dispatcher/SKILL.md](skills/dsh-harness-dispatcher/SKILL.md) → 红线 **B22** |
-| skill 正文 | [skills/](skills/AGENTS.md)：它是**运行时载荷**，不是文档；`check:release` 断言它随包发布 |
+| skill 正文 | 本文件「skill 正文的判据」两关 → [skills/](skills/AGENTS.md)：它是**运行时载荷**，不是文档；`check:release` 断言它随包发布 |
 | 给某个东西改名 | 红线 **B13/B14** 兜住源码旧词与文档旧工具名 |
 | 依赖范围 | `engines.dsh` / `peerDependencies` / devDependencies **三处同批**，逐字相同 |
 | 任何文档 | 跑链接校验，错误数保持 0：`python <maintenance-flow>/check-markdown-links.py . --fragments --refs` |

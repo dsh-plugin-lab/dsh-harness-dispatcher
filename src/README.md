@@ -8,7 +8,7 @@
 | 文件 | 导出 | 谁依赖 | 改后必跑 |
 |---|---|---|---|
 | [digest.ts](digest.ts) | `digestBytes` / `digestText` / `digestJson` | `harness`、`record`、`fold` | B4（记录里不许出现原文） |
-| [text.ts](text.ts) | `contentBlocksOf` | `trial` | — |
+| [text.ts](text.ts) | `contentBlocksOf` | `trial` | **B4**（答案整段保存，不截断） |
 | [attachments.ts](attachments.ts) | `resolvePrompt` / `planAttachment` / `imageDeliveryProblem` / `TaskAttachment` | `tools/harness-run`、`record` | **B27**（图片不可用必须拒；文件是路径句柄；记录只留身份）+ `attachments` 单测 |
 | [config.ts](config.ts) | `Config` / `ResolvedConfig` / `resolveConfig` | `index` | B9 + 真机（`harnessDir` 默认值决定能否挂载） |
 
@@ -84,8 +84,8 @@ frontmatter 的 `name` / `description` / `author` / `metadata.source`），apply
 
 | 文件 | 注册的工具 | 谁依赖 | 改后必跑 |
 |---|---|---|---|
-| [tools/params.ts](tools/params.ts) | 三个工具共享的参数片段 | 三个工具 | B11 + 工具 schema 相关的全部单测 |
-| [tools/harness-inspect.ts](tools/harness-inspect.ts) | `harness_inspect` | — | **B11**（含 `{ preset }` 分支与路由校验） |
+| [tools/params.ts](tools/params.ts) | 三个工具共享的参数片段；`ModelRouter` / `ProviderInfo` / `ModelInfo` | 三个工具 | B11 + 工具 schema 相关的全部单测 |
+| [tools/harness-inspect.ts](tools/harness-inspect.ts) | `harness_inspect` + `modelLines` | — | **B11**（含 `{ preset }` 分支与路由校验）/ **B21**（四个入口：无参列 preset+provider、`{provider}` 列模型、`preset`、`harness`） |
 | [tools/harness-export.ts](tools/harness-export.ts) | `harness_export` | — | B14（文档里的工具名） |
 | [tools/harness-run.ts](tools/harness-run.ts) | `harness_run` | — | **B5 / B6 / B8 / B23 / B26** |
 
@@ -102,7 +102,7 @@ frontmatter 的 `name` / `description` / `author` / `metadata.source`），apply
 | 挂载 / 审计 / 探针的顺序 | `subject.ts` → 红线 **B10** |
 | `sealed`（工具集封闭） | `sealed.ts` + `harness.ts` 的 `sealedRows` + `subject.ts` 的 `inheritedBy` → 红线 **B15**（遮罩行必须在前）/ **B19**（不承诺遮技能） |
 | `surface` 报什么（能到达 vs 存在） | `subject.ts` 的 `loadableSkills` → 红线 **B17** → `tools/harness-inspect` 的那行文案 |
-| `harness_inspect` 的三种用法（列 preset / 查 preset / 查 harness） | `subject.ts` 的 `presetList`/`presetSummaries` → 红线 **B21** → `tools/harness-inspect` 的输出 schema 与三个渲染分支 |
+| `harness_inspect` 的四种用法（列 preset+provider / 列某路由的模型 / 查 preset / 查 harness） | `subject.ts` 的 `presetList`/`presetSummaries` → `params.ts` 的 `ModelRouter` → 红线 **B21**（两个发现入口必须分开：`listProviders()` 同步读注册表，`listModels()` 异步由适配器决定）→ `tools/harness-inspect` 的输出 schema 与四个渲染分支 |
 | skill 正文 | [../skills/dsh-harness-dispatcher/SKILL.md](../skills/dsh-harness-dispatcher/SKILL.md) → 红线 **B22**（上限 + 事实清单 + 缺文件/空正文要响亮）→ `check:release` 断言它随包发布 → 改完真机确认它仍在技能目录里 |
 | 造工具 / 改工具的语义 | `tool.ts` 的 `toolSpecOf` → 红线 **B20** → [造工具与改工具](../docs/ARCHITECTURE.md#342-造工具与改工具dsh-harness-dispatchertool) → `package.json` 的 `exports` 与 `tsdown.config.ts` 的 `entry` |
 | run 目录的形状（新增落盘文件） | `record.ts` 的 `openRun` → [数据出口只有三个函数，且都不做聚合](../docs/ARCHITECTURE.md#44-数据出口只有三个函数且都不做聚合) → 两个 README 的目录树 |

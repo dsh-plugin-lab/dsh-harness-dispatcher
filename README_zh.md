@@ -15,6 +15,10 @@
     <a href="https://github.com/dsh-plugin-lab/dsh-harness-dispatcher/actions/workflows/ci.yml"><img src="https://github.com/dsh-plugin-lab/dsh-harness-dispatcher/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat" alt="MIT license"></a>
   </p>
+
+  <p>
+    <a href="README.md">English</a> · <strong><a href="README_zh.md">简体中文</a></strong>
+  </p>
 </div>
 
 ---
@@ -28,11 +32,16 @@
 
 - **一个零成本闭环，三个工具**：`harness_inspect` 挂载 + 审计 + 探针，**不起 agent、不花 token**；
   `harness_export` 把 preset 的行写成一份能跑的副本；`harness_run` 真跑，并留下一个自足的记录目录。
+- **先发现，再动手**：`harness_inspect` 不带参数就列出宿主有哪些 preset **和**哪些 model route，两者都读
+  本机注册表。再单独给 `provider` 才列出那一条路由的模型 —— 唯一要花一次适配器调用的读，也是「哪个模型
+  声明了 `image` 输入」的唯一答案，带图之前先问它。
 - **一个故障闸门**：对指定工具注入 `deny` / `fail` / `latency`，只作用于受试体，对其他 agent 零改动。
 - **宿主自己的数字，原样导出**（`host`）：宿主注册了的那些投影 key，照抄回来不改。宿主新增一个投影，
   这里就加一个字符串。
 - **本仓自己折叠的两个视图**：受试体**被给了什么**（`modelInput`，即「两次跑是不是同一份装配」的证据），
   以及没有任何投影提供的三个计数（`trace`）。
+- **受试体的答案完整保存**（`output`），不做前缀截断：切掉的部分重算不回来，而它下面那层原始日志本来就
+  大一个数量级。
 - **受试体的原始事件日志**（`events.jsonl`，默认开）：所以一份记录能按本插件从未有过的口径重算。
 - **一个随包注册的 skill**（`dsh-harness-dispatcher`，与包同名）：把这条回路和那些「漏了就废掉一次实验」
   的陷阱写在里面，agent 自己会找到。
@@ -108,6 +117,8 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 
 - **跑之前先 `harness_inspect`。** 它不花钱，而且与 `harness_run` 走同一段解析：inspect 说行，
   run 跑的才是那个。
+- **两件事免费问，一件事要花一次适配器调用。** 不带参数的 `harness_inspect` 只读本机；问某条路由有哪些
+  模型则不是 —— 只有适配器知道回答它要不要去问远端。但带图之前还是该问，那是唯一说清「哪个模型收图」的地方。
 - **默认是增量，除非你封起来。** 挂成 preset 之后它住在宿主里面，受试体默认还会继承宿主自己挂的全部工具。
   `sealed: true` 把这些遮掉。**工具集是变量时就用它**；要问「这份 harness 在这套部署里能不能跑」时别用。
 - **技能不是「遮」出来的，是「不给通道」关掉的。** harness 自己挂 `tool-skill` 时那条行保留，
