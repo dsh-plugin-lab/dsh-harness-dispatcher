@@ -1228,6 +1228,8 @@ describe('B22 — the skill is one page, and it says everything once', () => {
       /sealed: true/,
       /cannot mask/, // skills: the one thing sealing does not cover
       /dsh-harness-dispatcher\/tool/, // a tool can be defined or replaced in the file
+      /\.\/mine\.js/, // a row may name a path: your own code is a harness variable too
+      /fingerprint covers the row list, not the file/, // so editing that file is invisible to it
       /byte-identical/, // the task is the controlled variable
       /credentials/,
       /replaces/, // persona is a swap, not an addition — length says nothing

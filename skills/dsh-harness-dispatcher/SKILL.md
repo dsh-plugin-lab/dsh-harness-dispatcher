@@ -44,14 +44,21 @@ and how to read the record.
 - **A harness is a delta, not a world.** By default the subject also inherits every tool the host mounts
   for itself. `sealed: true` makes the harness the whole tool set; without it you are comparing two
   harnesses that share tools you never chose.
-- **Skills are the one thing sealing cannot mask.** They are reachable only through a `skill` tool, and
-  sealing removes the host's, so a sealed harness has no skill channel at all. A harness that mounts
-  `tool-skill` itself keeps that row, and the inherited catalogue then reaches the subject — no API stops
-  that.
+- **Skills are the one thing sealing cannot mask.** They reach the subject only through a `skill` tool, so
+  sealing, which removes the host's, cuts the channel. A harness that mounts `tool-skill` itself keeps that
+  row and the inherited catalogue follows — no API stops that.
 - **A tool can be defined in the file.** A row named `dsh-harness-dispatcher/tool` stands one up. Reusing
   a name the host already has **replaces** it, which is how a shipped tool's description or parameters
   become a variable; a name another row *in this harness* uses instead fails the mount. The tool always
   succeeds — failure and latency belong to `faults`.
+- **Or bring your own code as a row.** `name` takes a package (`@deepseek-ai/dsh-tool-fs`), a subpath
+  (`dsh-harness-dispatcher/tool`), or a path — `./mine.js` beside **the harness file**, or a `file:///…`
+  URL. The file is an ordinary plugin (`export const name`, `export function apply(ctx)`), so a persona, a
+  prompt section, middleware or a whole tool set you write is as much a variable as a shipped one. **The
+  fingerprint covers the row list, not the file it points at**: edit `mine.js` and two runs still carry one
+  fingerprint, so compare `modelInput` too before believing they were the same stimulus. **Under
+  `sealed`, a row that reuses a host tool's name is masked along with it** — `harness_inspect` reports the
+  names that survive, so read it instead of assuming.
 - **Persona replaces, it does not extend.** It compiles to a row, so it is inside the fingerprint like
   everything else, and the deployment persona is gone rather than added to. Judge it by
   `modelInput.systemPrompt.digest`, not by how much longer the prompt got.
@@ -68,9 +75,10 @@ and how to read the record.
   never fires still leaves a clean-looking record.
 - **Faults are not part of the harness.** They sit beside it, on the tool pipelines, so one harness file
   runs under different faults. "Same harness, different fault" is two variables, not one.
-- **Compare by `stimulus.fingerprint`, never by file name.** It covers the harness content, the route and
-  the delegation depth. Equal fingerprints applied the same thing; different ones did not, whatever the
-  files are called. **Varying the route makes two runs incomparable**, and an attached image pins it.
+- **Compare by `stimulus.fingerprint`, never by file name.** It covers the harness text, the route and the
+  delegation depth — the **declaration**, not what a row resolves to. Two runs of one harness whose row
+  points at a package or file that changed in between still carry one fingerprint. **Varying the route
+  makes two runs incomparable**, and an attached image pins it.
 - **Delegation is gated by the row, not by `max_depth`.** A subject can only spawn if the harness's own
   `tool-subagent` row sets `maxDepth` high enough; the request-level `max_depth` does not grant it, and a
   host default of `0` makes every attempt look like the model simply refusing.
