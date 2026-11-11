@@ -127,15 +127,6 @@ export async function hostSkillNames(ctx: Context): Promise<readonly string[]> {
 export const SKILL_TOOL = 'skill'
 
 /**
- * What a sealed harness has to hide: everything the host would otherwise hand the subject.
- * @param ctx - context outside any preset.
- * @returns the tool names to deny.
- */
-export function inheritedBy(ctx: Context): readonly string[] {
-  return hostToolNames(ctx)
-}
-
-/**
  * The skill registry as this module needs it.
  *
  * Declared structurally instead of imported so this plugin does not take a peer dependency on a service

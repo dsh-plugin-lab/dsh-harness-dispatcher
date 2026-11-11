@@ -20,7 +20,7 @@ import type { ResolveDeps } from '../harness.ts'
 import { harnessLabel, harnessRows, resolveHarness, sealedRows } from '../harness.ts'
 import {
   SKILL_TOOL,
-  inheritedBy,
+  hostToolNames,
   mountSubject,
   presetIdFor,
   rowProblems,
@@ -200,7 +200,7 @@ async function inspect(
     // The mask goes first: a scope's own registrations are exempt, so mounting the harness after it
     // keeps the harness's tools and hides only the inherited ones.
     rows: [
-      ...sealedRows(args.harness?.sealed === true ? inheritedBy(ctx) : []),
+      ...sealedRows(args.harness?.sealed === true ? hostToolNames(ctx) : []),
       ...harnessRows(resolved.captured, mountPath),
     ],
   })
