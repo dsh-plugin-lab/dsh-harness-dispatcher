@@ -10,7 +10,7 @@
  */
 
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { CATALOG, DEFAULT_TOOLS, TOOL_CATALOG, TOOL_KEYS } from '../src/catalog.ts'
@@ -18,7 +18,7 @@ import { foldEvent, emptyFold, finishFold, summarize } from '../src/fold.ts'
 import { normalizeFaults } from '../src/fault.ts'
 import { harnessRows, harnessLabel, sealedRows } from '../src/harness.ts'
 import { normalizeShortcut, shortcutRows } from '../src/shortcut.ts'
-import { SKILL_NAME, readSkillBody } from '../src/skill.ts'
+import { SKILL_NAME, readSkill, splitFrontmatter } from '../src/skill.ts'
 import { presetIdFor, presetSummaries } from '../src/subject.ts'
 import { toolSpecOf } from '../src/tool.ts'
 
@@ -474,7 +474,7 @@ describe('B12 — the tools teach their own use', () => {
   it('documents the two namespaces and the field to compare', () => {
     // Each of these is a trap that costs a real experiment when missed. The body is a file now, so this
     // reads the artifact that ships rather than the module that registers it.
-    const body = readSkillBody()
+    const { body } = readSkill()
     expect(body).toMatch(/CATALOGUE KEYS/)
     expect(body).toMatch(/MODEL-FACING TOOL NAMES/)
     expect(body).toMatch(/fingerprint/)
@@ -839,20 +839,55 @@ describe('B22 — the skill is one page, and it says everything once', () => {
     }
   })
 
-  it('fails loudly when the body is missing or empty, instead of registering nothing', () => {
-    // The host does not validate `content`, so an empty body is a skill that appears in the catalogue
-    // and renders nothing — no error on any side. Reading it from a file adds exactly this risk, so the
-    // reader is what has to refuse.
-    expect(() => readSkillBody(join(ROOT, 'skills', SKILL_NAME, 'no-such-file.md'))).toThrow(
+  it('is a real skill file: frontmatter with a matching name and a routing description', () => {
+    // Without frontmatter the file is a Markdown fragment. Registering it from code still works, so
+    // nothing fails at runtime — but `dsh-skill-filesystem` drops such a file, which means the artifact
+    // looks like a skill and is not one. `name` must also equal the directory, since that is what a
+    // filesystem provider keys on.
+    const frontmatter = splitFrontmatter(
+      readFileSync(join(ROOT, 'skills', SKILL_NAME, 'SKILL.md'), 'utf8'),
+    )
+    expect(frontmatter, 'the skill file lost its frontmatter block').toBeDefined()
+    expect(frontmatter?.fields.get('name')).toBe(SKILL_NAME)
+    const description = frontmatter?.fields.get('description') ?? ''
+    expect(description.length).toBeGreaterThan(40)
+    // A block scalar would register the literal ">-" as the only routing signal the model gets.
+    expect(description.startsWith('>')).toBe(false)
+    expect(description.startsWith('|')).toBe(false)
+  })
+
+  it('fails loudly on a missing file, a bare body, or an empty one', () => {
+    // The host validates a registration for name/description/invocation and nothing else, so a degraded
+    // skill surfaces only when a model loads it. Each branch is a way to ship one of those.
+    expect(() => readSkill(join(ROOT, 'skills', SKILL_NAME, 'no-such-file.md'))).toThrow(
       /could not be read/,
     )
-    const empty = join(ROOT, 'test', 'fixtures', 'empty-skill.md')
-    mkdirSync(dirname(empty), { recursive: true })
-    writeFileSync(empty, '   \n\n', 'utf8')
+    const dir = join(ROOT, 'test', 'fixtures')
+    mkdirSync(dir, { recursive: true })
+    const cases: [string, string, RegExp][] = [
+      ['bare-body.md', '# just markdown\n', /no YAML frontmatter/],
+      [
+        'wrong-name.md',
+        '---\nname: other\ndescription: x\n---\n\nbody\n',
+        /must be the kebab-case/,
+      ],
+      [
+        'block-scalar.md',
+        '---\nname: dsh-harness-bench\ndescription: >-\n---\n\nbody\n',
+        /single-line/,
+      ],
+      ['no-body.md', '---\nname: dsh-harness-bench\ndescription: x\n---\n\n', /no body/],
+    ]
     try {
-      expect(() => readSkillBody(empty)).toThrow(/is empty/)
+      for (const [file, text, expected] of cases) {
+        const path = join(dir, file)
+        writeFileSync(path, text, 'utf8')
+        expect(() => readSkill(path), file).toThrow(expected)
+      }
+      // The real file passes every one of those checks.
+      expect(readSkill().name).toBe(SKILL_NAME)
     } finally {
-      rmSync(empty, { force: true })
+      for (const [file] of cases) rmSync(join(dir, file), { force: true })
     }
   })
 
