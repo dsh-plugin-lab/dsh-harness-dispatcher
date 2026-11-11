@@ -89,11 +89,11 @@ export interface TrialRecord {
   /** Provider-authored failure detail, when the runtime supplied one. */
   readonly diagnostic: string | null
   /**
-   * The subject's final text, flattened and cut at 4 000 characters.
+   * The subject's final text, flattened and stored whole.
    *
-   * A convenience excerpt, not the answer: the full text is in `events.jsonl`'s last
-   * `assistant/message`, which is on by default. A caller that turns the raw log off accepts that
-   * this field is then the only copy — and that a long answer is truncated here.
+   * Never a prefix: a cut cannot be recomputed, and this field is the answer. `events.jsonl` carries
+   * the same text inside the last `assistant/message`, so the two are not independent — one of them is
+   * a convenience for reading, the other is the raw layer.
    */
   readonly output: string
   /** The subject's structured answer, when the task requested a schema. */
