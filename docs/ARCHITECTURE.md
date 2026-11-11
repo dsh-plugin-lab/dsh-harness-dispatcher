@@ -377,10 +377,14 @@ harness 文件所在目录，而 run 目录不在任何解析基准上，挂副�
 
 ## 5. 能力面
 
+**从零知识进门的第一格是 `harness_inspect` 不带参数**：它列出本机 preset 的 id。没有这一格，
+`preset` / `harness_export` 都得先知道一个 id，而没人告诉过你 —— 实测这台机器的默认是 `cordis`，
+和文档里常见的 `standard` 不是同一个。
+
 | 面 | 形态 | 阶段 |
 |---|---|---|
 | `harness_run` | 工具：任务 + 受试 harness + trial 数 → 结构化句柄 | **已实现** |
-| `harness_inspect` | 挂载 + 审计 + 探针（`acquireScope`），**零模型成本**；也接受 `preset` | **已实现** |
+| `harness_inspect` | 挂载 + 审计 + 探针（`acquireScope`），**零模型成本**；不带参数时**列出本机 preset**（默认的排第一，坏掉的那条连原因一起列出，不隐藏） | **已实现** |
 | `harness_export` | `readDocument()` → 一份能跑的 harness 文件 | **已实现** |
 | 使用说明 skill | [src/skill.ts](../src/skill.ts)，代码注册、`skills` 服务可选 | **已实现** |
 | 造工具 / 改工具 | preset 行 [src/tool.ts](../src/tool.ts)：一份文件定义或覆盖一个工具 | **已实现** |
