@@ -555,6 +555,70 @@ describe('B15 — a sealed harness is the whole tool set, not a delta', () => {
   })
 })
 
+describe('B16 — every import is a declared dependency', () => {
+  /**
+   * The rule: a package the source imports must be in the manifest. It was violated: `src/trial.ts`
+   * imported `@deepseek-ai/dsh-agent` while neither `peerDependencies` nor `devDependencies` listed it.
+   * Local typecheck stayed green because pnpm happened to hoist it as a transitive dependency; CI
+   * installed the manifest and failed with TS2307. Same family as B9 — "green here" is not "green there".
+   */
+  const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+    peerDependencies?: Record<string, string>
+    devDependencies?: Record<string, string>
+  }
+
+  /** Package specifiers the source imports, split by whether the import survives compilation. */
+  function imports(): { all: Set<string>; value: Set<string> } {
+    const all = new Set<string>()
+    const value = new Set<string>()
+    for (const [file, text] of sources()) {
+      if (file.endsWith('.test.ts')) continue
+      for (const match of text.matchAll(/import\s+(type\s+)?[^;]*?from '([^.'][^']*)'/g)) {
+        const specifier = match[2] ?? ''
+        // Only `@scope/name` survives: relative paths were excluded above, node builtins do not start
+        // with `@`, and subpaths are declared by their package.
+        const pkg =
+          (specifier.startsWith('@')
+            ? specifier.split('/').slice(0, 2).join('/')
+            : specifier.split('/')[0]) ?? ''
+        if (pkg === '') continue
+        all.add(pkg)
+        if (match[1] === undefined) value.add(pkg)
+      }
+    }
+    return { all, value }
+  }
+
+  it('declares every host package the source imports', () => {
+    const declared = new Set([
+      ...Object.keys(manifest.peerDependencies ?? {}),
+      ...Object.keys(manifest.devDependencies ?? {}),
+    ])
+    const missing = [...imports().all].filter(
+      (pkg) => pkg.startsWith('@deepseek-ai/') && !declared.has(pkg),
+    )
+    expect(missing, `imported but not declared: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it('keeps peer and dev ranges identical, as the dependency rule says', () => {
+    for (const [pkg, range] of Object.entries(manifest.peerDependencies ?? {})) {
+      expect(manifest.devDependencies?.[pkg], `${pkg} drifts between peer and dev`).toBe(range)
+    }
+  })
+
+  it('leaves every host package with a runtime import external to the bundle', () => {
+    // A bundled copy would give this plugin its own instance of host helpers, and the identity checks
+    // those helpers rely on would then disagree with the running host. Type-only imports are erased,
+    // so they need no external — which is why the assertion reads value imports, not declarations.
+    const tsdown = readFileSync(join(ROOT, 'tsdown.config.ts'), 'utf8')
+    for (const pkg of imports().value) {
+      // Node builtins (`node:fs`, `fs`) are the platform, not a package; the bundler handles them.
+      if (pkg.startsWith('node:') || !pkg.includes('/')) continue
+      expect(tsdown, `${pkg} has a runtime import and must stay external`).toContain(`'${pkg}'`)
+    }
+  })
+})
+
 describe('B14 — documentation points at files and tools that exist', () => {
   /** Every markdown file in the repository, as `relative path → text`. */
   function documents(): Map<string, string> {
