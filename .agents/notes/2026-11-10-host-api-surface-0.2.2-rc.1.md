@@ -440,7 +440,7 @@ export interface SubagentProvider {
     readonly capabilities: SubagentCapabilities;
 ```
 
-另外 provider 上还有两个**必读**字段（评测台要用）：
+另外 provider 上还有两个**必读**字段（调度器要用）：
 - `[d.ts]` `:306`：`readonly inheritsParentContext: boolean;` —— 子 agent 是否看得到父的已完成轮次前缀
   （`:301-305` 强调它是 descriptive、**不是** service 校验过的 start capability）。
 - `[d.ts]` `:313-316`：`readonly agentRouteDefaults?: Readonly<{ provider: string; model: string; }>;`
@@ -547,7 +547,7 @@ export interface ToolOutputDefinition {
 
 ⚠️ **`register` 第二个参数 `options?: ToolRegistrationOptions` 是 0.2.2-rc.1 的**（检出侧只有 1 个参数，见 §9）。
 `ToolRegistrationOptions` `[d.ts]` `contracts.d.ts:110`（「Lifecycle-owned conditions for a registered tool」，
-可做**按步激活条件** —— 评测台做"工具集受试变量"时这是关键接缝）。
+可做**按步激活条件** —— 调度器做"工具集受试变量"时这是关键接缝）。
 
 ### 4.5 `ToolRestriction`
 
@@ -660,7 +660,7 @@ export interface AgentOptions {
 | `toolHistory` | `toolHistory(): ToolHistory;` | `:330` |
 | `deriveEventMessage` | `deriveEventMessage(event: SessionEvent): Message \| null;` | `:362` |
 
-> **对评测台的直接影响（推断，非契约）**：如果你们的观测折叠打算调 `snapshotEvents()` 取轨迹，
+> **对调度器的直接影响（推断，非契约）**：如果你们的观测折叠打算调 `snapshotEvents()` 取轨迹，
 > 那在 0.2.2-rc.1 上是**已废弃路径**。官方给的正路是
 > **`ctx.sessionProjections.register()`**（旁路折事件流，`apply(state, event)`）—— 这也正好是 §1 那套 API。
 > 即：**观测应该做成一个 projection unit，而不是轮询 `snapshotEvents()`**。
@@ -760,7 +760,7 @@ the session persistence seam owns that surface.」** ← **这是 README 推断�
 `dsh-agent-instructions` / `dsh-anonymous-user-id` / `dsh-app-boot` / `dsh-attachment-local` /
 `dsh-credentials-local` / `dsh-llm-deepseek` / `dsh-shell-env` / `dsh-skill-filesystem`。
 
-### 7.3 那么评测台该用哪个？—— 按数据形状分
+### 7.3 那么调度器该用哪个？—— 按数据形状分
 
 | 你要写的 | 官方接缝 | 依据 |
 |---|---|---|

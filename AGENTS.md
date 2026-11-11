@@ -160,7 +160,7 @@ skill 还在教人去找）、`output` 不截断这件事（改动说明不是�
 | 写法 | 挂上的是什么 |
 |---|---|
 | `@deepseek-ai/dsh-tool-fs` 等宿主包 | 宿主安装目录里的任何插件 |
-| `dsh-harness-dispatcher` / `…/tool` / `…/sealed` | **本仓自己** —— 一行让受试体拿到测评台的全部工具 |
+| `dsh-harness-dispatcher` / `…/tool` / `…/sealed` | **本仓自己** —— 一行让受试体拿到调度器的全部工具 |
 | `./x.js`、`../x.js`、`file:///C:/…/x.js` | **任意本地文件**；相对路径的基准是 **harness 文件所在目录** |
 | `dsh-persona`、`dsh-time-context`、`cordis:group` + `isolate`、`!!js` 条件行 | 人设、时间上下文、compaction / planning / 委派分组、按平台开关的行 |
 
@@ -187,7 +187,7 @@ skill 还在教人去找）、`output` 不截断这件事（改动说明不是�
 | Windows 传绝对路径给 `cordis:include` | 盘符被当 URL scheme，行**永远挂不上** | 一律 `pathToFileURL()`，红线 **B8** |
 | harness 文件放在 profile 树 / link 仓之外 | 每一行的裸模块名 `MODULE_NOT_FOUND` | `harnessDir` 默认在 profile 内，红线 **B8** |
 | preset 里写 `disabled: true` 想减宿主行 | **减不掉**：那只取消 preset 自己的行 | 要封闭就用 `sealed`，红线 **B15** |
-| 技能注册在宿主层，受试体也看得见 | 考生拿到**本评测台的使用说明**，实验被污染 | 只给它没有 `skill` 工具的环境；遮不住，见上 |
+| 技能注册在宿主层，受试体也看得见 | 考生拿到**本调度器的使用说明**，实验被污染 | 只给它没有 `skill` 工具的环境；遮不住，见上 |
 | 插件注册的东西不用 `ctx.effect` 收 | 卸载后残留：热重载改了技能正文却仍是旧的 | 注册一律挂 fiber，红线 **B18** |
 | 拿「注册表里有什么」当「受试体能调什么」 | 探针**回答的不是它名字承诺的问题**，读记录的人反着推断。第二种形状：`sealed` 按**名字**遮，所以 harness 自造的替换品也被遮掉，而作用域视图仍报它可见（实测探针 3 个、实收 2 个；更刺眼的一次是 0 个，受试体**编了十个工具名**） | 探针减掉封印名单（`reachableTools`），红线 **B17**；`modelInput.tools` 才是事实 |
 | 以为同名条目能盖掉继承来的技能 | 实测三次都**盖不掉**（落全局层、先到者赢）；再这么写就是假封闭 | `sealed` 不承诺遮技能，红线 **B19** |
