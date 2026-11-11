@@ -5,12 +5,15 @@
  * mechanism for exactly that: it sits in the catalogue until an agent loads it, so the instructions cost
  * nothing until needed.
  *
- * **Registered from code, carried as a file.** A filesystem skill is only visible when a preset mounts a
- * skill provider pointed at it — a preset that does not (such as `standard`) sees none of them, and a
- * pointer without a fallback fails silently. So the registration is code. But the *body* is
- * [SKILL.md](../skills/dsh-harness-bench/SKILL.md), read at apply time, because prose belongs in a file
- * a human reviews and diffs, not in a template literal inside a bundler's input. Editing it needs no
- * rebuild; a missing one fails loudly instead of shipping an empty skill.
+ * **Registered from code, carried as a real skill file.** A filesystem skill is only visible when a
+ * preset mounts a skill provider pointed at it — a preset that does not (such as `standard`) sees none of
+ * them, and a pointer without a fallback fails silently. So the registration is code.
+ *
+ * The file is [skills/dsh-harness-bench/SKILL.md](../skills/dsh-harness-bench/SKILL.md), and it carries
+ * its own YAML frontmatter: `name` and `description` have one home, in the file, and the file stays a
+ * **valid skill file** — mountable by `dsh-skill-filesystem` if someone ever points a provider at this
+ * directory. A body-only fragment would look identical and be dropped by that provider, which is exactly
+ * the kind of half-reusable artifact this repository avoids.
  *
  * `skills` is therefore an **optional** service: no registry, no skill, everything else still works.
  *
@@ -23,10 +26,10 @@ import { fileURLToPath } from 'node:url'
 
 import type { Context } from '@deepseek-ai/cordis'
 
-/** The skill's name. Kebab-case, and namespaced so it cannot collide with a user's own skill. */
+/** The skill's name. Also the directory name, and what its frontmatter must say. */
 export const SKILL_NAME = 'dsh-harness-bench'
 
-/** File name inside the skill directory. The host strips frontmatter; this body has none. */
+/** File name inside the skill directory. */
 const SKILL_FILE = 'SKILL.md'
 
 /**
@@ -44,6 +47,18 @@ const SKILL_PATH = join(
   SKILL_FILE,
 )
 
+/** Kebab-case, the grammar the host applies to skill names. */
+const KEBAB_CASE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+/**
+ * A block scalar marker (`>-`, `|`, `|-`…).
+ *
+ * Writing `description: >-` and continuing on the next line is legal YAML, and this reader only takes
+ * single-line scalars. Registering the literal `>-` as the description would leave the skill in the
+ * catalogue with a description that routes nothing — the model's only signal, replaced by a dash.
+ */
+const BLOCK_SCALAR = /^[|>][+-]?$/
+
 /**
  * The skill registry as this module needs it. Structural, so no peer dependency on a service we only
  * use when the host happens to mount it.
@@ -56,23 +71,70 @@ interface SkillRegistry {
   }): () => void
 }
 
-/** Routing text; the only part of a skill the model sees before loading it. */
-const DESCRIPTION =
-  'How to use this bench: list the presets this host has, inspect a harness for free, export a working ' +
-  'one to edit, redefine or add a tool in the file, run a task against it, and read the records. ' +
-  'Covers the two tool-name namespaces and why runs are compared by fingerprint.'
+/** One skill file, split into the parts the host needs. */
+export interface LoadedSkill {
+  readonly name: string
+  readonly description: string
+  /** The Markdown after the frontmatter. */
+  readonly body: string
+}
+
+/** Strip a matching pair of quotes, as YAML convention requires when a value contains `: `. */
+function unquote(value: string): string {
+  const trimmed = value.trim()
+  if (trimmed.length >= 2) {
+    const first = trimmed[0]
+    const last = trimmed[trimmed.length - 1]
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return trimmed.slice(1, -1)
+    }
+  }
+  return trimmed
+}
 
 /**
- * Read the instructions.
- *
- * **No silent empty body.** The host does not validate `content`, so registering an empty one produces a
- * skill that looks present in the catalogue and renders nothing when loaded — a failure with no
- * diagnostic anywhere. Reading it here, and refusing, keeps that from happening.
- * @param path - the file to read; overridable so tests can point at a fixture.
- * @returns the body, trimmed.
- * @throws {Error} when the file cannot be read or holds no body.
+ * Split a skill file into frontmatter fields and body.
+ * @param raw - the file's text.
+ * @returns the top-level fields and the body, or `undefined` when there is no frontmatter block.
  */
-export function readSkillBody(path: string = SKILL_PATH): string {
+export function splitFrontmatter(
+  raw: string,
+): { fields: Map<string, string>; body: string } | undefined {
+  const lines = raw.split('\n')
+  if ((lines[0] ?? '').trim() !== '---') return undefined
+  const end = lines.findIndex((line, index) => index > 0 && line.trim() === '---')
+  if (end < 0) return undefined
+
+  const fields = new Map<string, string>()
+  for (const line of lines.slice(1, end)) {
+    // Only top-level `key: value`; indented continuation lines are outside this reader's scope.
+    if (line === '' || /^\s/.test(line)) continue
+    const colon = line.indexOf(':')
+    if (colon < 0) continue
+    const key = line.slice(0, colon).trim()
+    if (key !== '') fields.set(key, unquote(line.slice(colon + 1)))
+  }
+  return {
+    fields,
+    body: lines
+      .slice(end + 1)
+      .join('\n')
+      .trim(),
+  }
+}
+
+/**
+ * Read and validate the skill file.
+ *
+ * Every branch below refuses rather than registering something degraded. The host checks a registration
+ * for `name`, `description` and the invocation flags and nothing else — a missing or empty body surfaces
+ * only when a model loads the skill and gets an empty block, by which point nothing says which step broke.
+ *
+ * @param path - the file to read; overridable so tests can point at a fixture.
+ * @returns name, description and body.
+ * @throws {Error} when the file is unreadable, malformed, or empty.
+ */
+export function readSkill(path: string = SKILL_PATH): LoadedSkill {
   let raw: string
   try {
     raw = readFileSync(path, 'utf8')
@@ -84,10 +146,35 @@ export function readSkillBody(path: string = SKILL_PATH): string {
       { cause: error },
     )
   }
-  const body = raw.trim()
-  if (body === '')
-    throw new Error(`${path} is empty, which would register a skill that renders nothing`)
-  return body
+
+  const parsed = splitFrontmatter(raw)
+  if (parsed === undefined) {
+    throw new Error(
+      `${path} has no YAML frontmatter block, so it is not a valid skill file: it must open with "---", ` +
+        `carry "name" and "description", and close the block with a second "---".`,
+    )
+  }
+  const name = parsed.fields.get('name') ?? ''
+  const description = parsed.fields.get('description') ?? ''
+  if (!KEBAB_CASE.test(name) || name !== SKILL_NAME) {
+    throw new Error(
+      `${path} declares name ${JSON.stringify(name)}, which must be the kebab-case "${SKILL_NAME}" — the ` +
+        `same string as this directory. A mismatch registers a skill the catalogue lists under a name ` +
+        `nothing else agrees with.`,
+    )
+  }
+  if (description === '' || BLOCK_SCALAR.test(description)) {
+    throw new Error(
+      `${path} needs a single-line "description": it is the only routing signal the model sees before ` +
+        `loading the skill, so a block scalar such as ">-" leaves the skill present and unreachable.`,
+    )
+  }
+  if (parsed.body === '') {
+    throw new Error(
+      `${path} has frontmatter but no body, which would render an empty <skill_content>.`,
+    )
+  }
+  return { name, description, body: parsed.body }
 }
 
 /**
@@ -100,13 +187,13 @@ export function readSkillBody(path: string = SKILL_PATH): string {
  *
  * A failure is logged and not thrown: the tools are the bench, the skill only explains them, so a
  * profile that cannot take the skill must still get a working bench. The log line names the cause, so a
- * broken body is not mistaken for a host without skills.
+ * malformed file is not mistaken for a host without skills.
  *
  * @param ctx - the plugin's context.
- * @param body - the instructions; read from disk when omitted, so tests can pass a fixture.
+ * @param skill - an already-loaded skill; read from disk when omitted, so tests can pass a fixture.
  * @returns whether the skill was registered; `false` means no registry, or the registration failed.
  */
-export function registerSkill(ctx: Context, body?: string): boolean {
+export function registerSkill(ctx: Context, skill?: LoadedSkill): boolean {
   const skills: SkillRegistry | undefined = ctx.get('skills')
   if (skills === undefined) {
     ctx.logger.info(
@@ -115,9 +202,9 @@ export function registerSkill(ctx: Context, body?: string): boolean {
     return false
   }
 
-  let content: string
+  let loaded: LoadedSkill
   try {
-    content = body ?? readSkillBody()
+    loaded = skill ?? readSkill()
   } catch (error) {
     ctx.logger.warn(`harness-dispatcher: the usage skill was not registered: ${String(error)}`)
     return false
@@ -125,7 +212,12 @@ export function registerSkill(ctx: Context, body?: string): boolean {
 
   try {
     ctx.effect(
-      () => skills.register({ name: SKILL_NAME, description: DESCRIPTION, content }),
+      () =>
+        skills.register({
+          name: loaded.name,
+          description: loaded.description,
+          content: loaded.body,
+        }),
       'harness.skill',
     )
   } catch (error) {

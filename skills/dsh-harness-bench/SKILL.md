@@ -1,3 +1,13 @@
+---
+name: dsh-harness-bench
+description: "How to use this bench: list the presets this host has, inspect a harness for free, export a working one to edit, redefine or add a tool in the file, run a task against it, and read the records. Covers the two tool-name namespaces and why runs are compared by fingerprint."
+author: zlZayn
+metadata:
+  source:
+    repo: https://github.com/dsh-plugin-lab/dsh-harness-dispatcher
+    path: skills/dsh-harness-bench
+---
+
 # Benchmarking a harness
 
 A **harness** is what a child agent runs with: its prompt and tool rows, plus the model route its
