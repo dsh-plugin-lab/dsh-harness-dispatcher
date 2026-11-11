@@ -1,30 +1,14 @@
 /**
  * One tool: inspect a harness without running it.
  *
- * ## Why this is the centre of the design
+ * Mounting costs no model call, so this is the one-second, zero-token loop. It answers the three things
+ * a static check cannot: will it mount (the registry's own diagnosis, which `register()` swallows);
+ * will every row contribute (a policy-denied row mounts disabled and the audit skips it); and what can
+ * the subject actually call (the observed names, which a fault must be checked against).
  *
- * Mounting a Loader tree costs no model call, so "write it wrong → find out → fix it" is a one-second
- * loop that spends no tokens. This tool is that loop.
- *
- * ## Three questions a static check cannot answer, in the order they bite
- *
- *   1. **Will it mount?** The registry's own diagnosis, row by row. `register()` resolves even when the
- *      mount failed, so this is the only place that diagnosis is ever read.
- *   2. **Will every row contribute?** A row the profile's compatibility policy denies mounts disabled
- *      and the activation audit skips it, so a harness can mount "cleanly" and contribute nothing.
- *   3. **What can the subject actually call?** The observed tool and skill names, which is what a fault
- *      must be checked against and what makes "the same harness" checkable before a run is paid for.
- *
- * ## Three ways to name the target, because the first question has three shapes
- *
- *   - `preset: "standard"` — inspect a preset the host already has. **No file, no download, no setup**:
- *     this is the first thing a newcomer should call, and it is why inspection does not require an
- *     export first.
- *   - `harness: { file }` — a harness file, as authored or exported.
- *   - `harness: { tools, persona }` — the shortcut.
- *
- * A `preset` is inspected where it lives; the other two are mounted privately and unmounted in a
- * `finally`, so an inspection never changes what any other agent sees.
+ * Three ways to name the target: `preset` inspects one the host already has — no file, no setup, the
+ * first thing a newcomer should call; `harness.file` and the shortcut scalars are mounted privately and
+ * unmounted in a `finally`, so an inspection never changes what another agent sees.
  *
  * @module dsh-harness-dispatcher/tools/harness-inspect
  */
@@ -33,8 +17,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { normalizeFaults, assertFaultsReachable } from '../fault.ts'
 import type { ResolveDeps } from '../harness.ts'
-import { harnessLabel, harnessRows, resolveHarness } from '../harness.ts'
-import { mountSubject, presetIdFor, rowProblems, surfaceOf } from '../subject.ts'
+import { harnessLabel, harnessRows, resolveHarness, sealedRows } from '../harness.ts'
+import { hostToolNames, mountSubject, presetIdFor, rowProblems, surfaceOf } from '../subject.ts'
 import type { CapabilitySurface } from '../subject.ts'
 import {
   FAULTS_PARAMETER,
@@ -206,7 +190,12 @@ async function inspect(
   const subject = await mountSubject(ctx, {
     presetId: presetIdFor(deps.nextId()),
     label: harnessLabel(resolved.captured),
-    rows: harnessRows(resolved.captured, mountPath),
+    // The mask goes first: a scope's own registrations are exempt, so mounting the harness after it
+    // keeps the harness's tools and hides only the inherited ones.
+    rows: [
+      ...sealedRows(args.harness?.sealed === true ? hostToolNames(ctx) : []),
+      ...harnessRows(resolved.captured, mountPath),
+    ],
   })
   try {
     const captured = resolved.captured

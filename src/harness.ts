@@ -1,36 +1,15 @@
 /**
- * The harness under test: one captured row list, plus the request-level settings that make a stimulus.
+ * The harness under test: one captured row list, plus the request settings that make a stimulus.
  *
- * ## One capture, three consumers
+ * One read, three consumers — digest (the declared identity), run-directory copy (evidence), subject
+ * rows (what `agentPresets.register` receives). All three come from that one string, so "the recorded
+ * digest describes what ran" holds by construction.
  *
- * A harness arrives one of two ways — an authored file, or the [`shortcut`](shortcut.ts) — and both are
- * reduced to the same three values in one pass:
+ * A file harness is handed to the host as a single `cordis:include` row: the Loader parses its own
+ * dialect, and a second parser here would be a second definition of "a harness".
  *
- * ```
- * text  ──┬─→ digest             the declared identity, written into every record
- *         ├─→ run-directory copy the evidence, byte-identical to what was mounted
- *         └─→ subject rows       what `agentPresets.register` receives
- * ```
- *
- * Because all three come from the *same* string read or built exactly once, "the recorded digest
- * describes what ran" is true by construction rather than by re-reading a path later.
- *
- * ## Who parses a file
- *
- * **Not us.** A file-based harness is handed to the host as a single `cordis:include` row, so the
- * Loader parses its own dialect — groups, `isolate`, `inject`, and `!!js` included. Re-implementing that
- * grammar here would mean a second, subtly different definition of "a harness"; a file the Loader
- * accepts would then have to also pass *our* parser, and the two would drift.
- *
- * The shortcut needs no parser at all: its rows are compiled in [shortcut.ts](shortcut.ts) and
- * serialized as JSON, which the same include row can replay later.
- *
- * ## Route and depth are not the harness
- *
- * `agentOptions` and `maxDepth` are request fields. They cannot be written into a row list, so they sit
- * beside the harness rather than inside either form — which is what lets one file be run under two
- * routes without editing it. {@link ResolvedHarness.fingerprint} covers both anyway, because "the same
- * stimulus" requires the same harness *and* the same request.
+ * `agentOptions` and `maxDepth` cannot be written into a row list, so they sit beside the harness —
+ * which is what lets one file run under two routes. {@link ResolvedHarness.fingerprint} covers both.
  *
  * @module dsh-harness-dispatcher/harness
  */
@@ -58,6 +37,12 @@ const INCLUDE_PLUGIN = 'cordis:include'
 
 /** Row id of the include row. Stable across runs, so the audit reads it. */
 const INCLUDE_ROW_ID = 'bench-harness'
+
+/** The masking row this package ships; see {@link sealedRows}. */
+const SEALED_PLUGIN = 'dsh-harness-dispatcher/sealed'
+
+/** Row id of the masking row. */
+const SEALED_ROW_ID = 'bench-sealed'
 
 /** Extensions `cordis:include` can parse. A harness file outside these is a spec error. */
 export const HARNESS_EXTENSIONS: readonly string[] = ['.yml', '.yaml', '.json']
@@ -146,14 +131,11 @@ export class HarnessSpecError extends Error {
 }
 
 /**
- * The absolute path a non-absolute `file` resolves in.
+ * The absolute paths a `file` value may mean, most literal first.
  *
- * **One rule, no fallbacks.** An absolute path is taken as given; anything else is a *name* and resolves
- * in the harness directory, with the extension supplied when it is missing. Earlier versions also tried
- * the process directory first, which meant `harness: { file: 'x.yml' }` could silently pick up an
- * unrelated file that happened to sit where the process started. Predictability beats convenience: the
- * harness directory is where `harness_export` writes, so the common case needs no path at all.
- *
+ * An absolute path is taken as given; anything else is a *name* and resolves in the harness directory,
+ * with the extension supplied when missing. No fallback to the process directory: it once let
+ * `file: 'x.yml'` pick up an unrelated file from wherever the process started.
  * @param name - the value the caller passed.
  * @param harnessDir - directory names resolve in.
  * @returns absolute candidates, most literal first.
@@ -200,7 +182,6 @@ async function isFile(path: string): Promise<boolean> {
 
 /**
  * Capture the harness and resolve the request settings into one recorded value.
- *
  * @param input - the caller's harness selection plus route and depth.
  * @param deps - defaults and the catalogue.
  * @returns the resolved harness and its fingerprint.
@@ -295,26 +276,10 @@ function resolveMaxDepth(given: number | undefined, fallback: number): number {
 }
 
 /**
- * The rows to register, for a harness that will be read from `mountPath`.
+ * The rows to register: one include row for a file, the compiled rows for a shortcut.
  *
- * A file harness becomes exactly one include row, so the host parses the file. A shortcut is already
- * rows and ignores the path — its compiled form is what ran, and its captured JSON is what a replay
- * will parse.
- *
- * ## `path` must be a `file:` URL, not a path
- *
- * The host resolves the include's path with `new URL(path, baseUrl)` and then `fileURLToPath`. On a
- * drive letter that is a trap: `new URL('C:/x/y.yml', …)` parses `C:` as a **URL scheme**, so
- * `fileURLToPath` throws `ERR_INVALID_URL_SCHEME`. Measured on Windows against `0.2.2-rc.1`, host row
- * `cordis:include`: an absolute path in `path` never mounts. A `file://` URL does.
- *
- * ## And the file must sit where row names resolve
- *
- * `Include` sets `ctx.baseUrl` to the harness file's own directory, and a bare `@deepseek-ai/…` row
- * name resolves through the host's interception layer only when the importing file is inside a profile
- * tree or a linked package. Measured on the same host: a harness file in `%TEMP%` imports fine and then
- * fails every row with `MODULE_NOT_FOUND`. So {@link mountPathFor} keeps the mount on a resolution base.
- *
+ * `path` must be a `file:` URL. The host builds it with `new URL(path, baseUrl)`, so on Windows a drive
+ * letter parses as a URL scheme and `fileURLToPath` throws — an absolute path in `path` never mounts.
  * @param captured - the captured harness.
  * @param mountPath - absolute path the harness is readable at when it is mounted.
  * @returns rows in load order.
@@ -325,12 +290,23 @@ export function harnessRows(captured: CapturedHarness, mountPath: string): reado
 }
 
 /**
- * The absolute path to mount a file harness from.
+ * A row that hides tools the host would otherwise hand the subject.
  *
- * **The operator's file, not the run-directory copy.** The copy is evidence; mounting it would move the
- * resolution base to the run directory, which is outside every profile tree, so every `@deepseek-ai/…`
- * row name in the file would fail to import. Byte-equality between the two is still recorded: the digest
- * comes from the same read that produced the captured text.
+ * Must be mounted before the harness's own rows: a scope's own registrations are exempt from
+ * restrictions, so ordering is what leaves the harness visible and the inherited tools masked.
+ * @param deny - tool names to remove; empty produces no row at all.
+ * @returns zero or one row.
+ */
+export function sealedRows(deny: readonly string[]): readonly HarnessRow[] {
+  if (deny.length === 0) return []
+  return [{ id: SEALED_ROW_ID, name: SEALED_PLUGIN, config: { deny: [...deny] } }]
+}
+
+/**
+ * The absolute path to mount a file harness from: the operator's file, not the run-directory copy.
+ *
+ * The copy is evidence. Mounting it would move the resolution base to the run directory, which is
+ * outside every profile tree, so every `@deepseek-ai/…` row name in the file would fail to import.
  * @param captured - the captured harness.
  * @param runCopyPath - where the run directory keeps its verbatim copy.
  * @returns the path to mount.

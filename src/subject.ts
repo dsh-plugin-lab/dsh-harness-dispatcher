@@ -1,32 +1,22 @@
 /**
  * Mounting a harness, and reading back what it will actually see.
  *
- * ## Why this is a separate step from running a trial
+ * Mounting a Loader tree **does not start a model call**, which is what makes "write it wrong → find
+ * out → fix it" cheap. `harness_inspect` is this step and nothing else.
  *
- * Mounting a Loader tree **does not start a model call**. That single fact is what makes the whole
- * design affordable: a harness can be mounted, audited and inspected in a second, for zero tokens, so
- * "write it wrong → find out → fix it" is cheap enough to iterate on. `harness_inspect` is this step
- * and nothing else.
- *
- * ## The three gates, and the one that is easy to miss
+ * Three gates, and the ones that are easy to miss:
  *
  *   1. **Structure.** The registry validates rows before importing anything.
- *   2. **Activation.** `mountPreset` audits row by row and reports import, activation and
- *      missing-service failures. But it *swallows* them: `register()` resolves normally and keeps the
- *      diagnostic in its record, so the failure only surfaces when a child tries to join the preset.
- *      Reading `resolve(id).broken` back is not optional — without it a broken harness would produce a
- *      run directory and an empty `trials.jsonl` instead of an error.
- *   3. **Enablement.** A row the profile's compatibility policy denies mounts *disabled*, and the audit
- *      skips disabled rows — so a harness can pass gate 2 while contributing nothing.
- *      `compositionInventory()` is the only place that is visible.
+ *   2. **Activation.** `register()` resolves even when the mount failed — the diagnostic stays in its
+ *      record. Without reading `resolve(id).broken` back, a broken harness yields a run directory and an
+ *      empty `trials.jsonl` instead of an error.
+ *   3. **Enablement.** A row the profile's policy denies mounts *disabled*, and the audit skips disabled
+ *      rows, so gate 2 can pass while the row contributes nothing. `compositionInventory()` is the only
+ *      place that is visible.
  *
- * ## Why probe through a scope lease rather than the row list
- *
- * The audit answers "did every row start". The experiment needs a different question: *what can the
- * subject call?* `acquireScope(id)` hands out a scope for a preset **without starting an agent**, and
- * the tool and skill registries answer for that scope — global contributions plus the preset's own,
- * after shadowing and restriction. That is the capability surface, and it is what a fault
- * must be checked against.
+ * Probing goes through a scope lease, not the row list: the audit says "did every row start", while the
+ * experiment asks *what can the subject call?* `acquireScope(id)` answers that without starting an agent,
+ * after shadowing and restriction — and a fault must be checked against it.
  *
  * @module dsh-harness-dispatcher/subject
  */
@@ -83,6 +73,21 @@ export interface SubjectPlan {
  */
 export function presetIdFor(scope: string): string {
   return `bench-${scope}`
+}
+
+/**
+ * Every tool name the host makes globally visible, i.e. what a subject would inherit.
+ *
+ * Read from the plugin's own scope, which sits above the subject's: a preset adds rows to a child tree,
+ * so whatever is global here is what leaks into a harness that does not seal itself.
+ * @param ctx - context outside any preset.
+ * @returns sorted tool names.
+ */
+export function hostToolNames(ctx: Context): readonly string[] {
+  return ctx.tools
+    .definitions()
+    .map((definition) => definition.name)
+    .sort()
 }
 
 /**

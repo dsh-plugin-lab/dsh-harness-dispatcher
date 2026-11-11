@@ -29,6 +29,10 @@
       "types": "./lib/index.d.ts",
       "import": "./lib/index.js"
     },
+    "./sealed": {
+      "types": "./lib/sealed.d.ts",
+      "import": "./lib/sealed.js"
+    },
     "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },

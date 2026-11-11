@@ -1,16 +1,12 @@
 /**
  * The parameters the harness-facing tools share, and the mappers that read them.
  *
- * Two properties hold by construction because everything lives here:
- *
- *   1. **One vocabulary.** A harness is named in exactly one place in the tool surface — a `harness`
- *      object with a `file` *or* the shortcut scalars — so a caller cannot learn two ways to say it.
- *   2. **No drift between tools.** `harness_inspect` and `harness_run` answer the same first question,
- *      so they must answer it identically. Whatever the inspection says about a harness, the run applies
- *      exactly that harness.
+ * Everything lives here so that one vocabulary and no drift hold by construction: a harness is named in
+ * exactly one shape, and `harness_inspect` and `harness_run` must answer the same first question
+ * identically — whatever the inspection says about a harness, the run applies exactly that.
  *
  * Route and depth are siblings of `harness`, not fields inside it: they are request-level and cannot be
- * written into a row list, so one harness file can be run under two routes without editing it.
+ * written into a row list, so one harness file can run under two routes unedited.
  *
  * @module dsh-harness-dispatcher/tools/params
  */
@@ -51,6 +47,13 @@ export const HARNESS_PROPERTIES = {
   persona_text: {
     type: 'string',
     description: 'Shortcut form: prose, only with persona "custom".',
+  },
+  sealed: {
+    type: 'boolean',
+    description:
+      'Make the harness the whole tool set instead of a delta on the host. Without it the subject ' +
+      'also sees every tool the host mounts for itself, which is usually not what an experiment ' +
+      'wants to hold constant.',
   },
 } as const satisfies ParameterSchemaSpec
 
@@ -123,6 +126,7 @@ export interface HarnessArgs {
     readonly tools?: readonly string[] | undefined
     readonly persona?: string | undefined
     readonly persona_text?: string | undefined
+    readonly sealed?: boolean | undefined
   }
   readonly provider?: string | undefined
   readonly model?: string | undefined

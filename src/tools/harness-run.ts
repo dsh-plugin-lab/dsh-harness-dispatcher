@@ -1,24 +1,20 @@
 /**
  * One tool: run a task N times against one harness, record each trial, return handles.
  *
- * The shape is deliberately narrow — one harness, one task, N trials — because the comparison an
- * experiment makes is *across calls*, with the task held fixed and the harness as the only change. A
- * tool that also fanned out across harnesses would tempt callers into varying two things at once.
+ * One harness, one task, N trials — the comparison is *across calls*, so a tool that also fanned out
+ * across harnesses would tempt callers into changing two things at once.
  *
- * ## The order of operations is the safety property
- *
- * ```
- * 1  capture the harness once (read or compile)              — no host state, no tokens
- * 2  open the run directory, write the capture into it        — evidence exists before anything runs
- * 3  mount THAT capture, audit it, probe it                   — zero model calls
- * 4  run the trials                                           — the only expensive part
- * 5  always unmount; on any failure before 4, remove the directory
+ * ```text
+ * 1  capture once (read or compile)          no host state, no tokens
+ * 2  open the run directory, write it there  evidence exists before anything runs
+ * 3  mount THAT capture, audit, probe        zero model calls
+ * 4  run the trials                          the only expensive part
+ * 5  always unmount; on failure before 4, remove the directory
  * ```
  *
- * Step 3 before step 4 is not tidiness. `agentPresets.register()` resolves even when the mount failed
- * and keeps the diagnostic in its own record, so without reading it back a broken harness used to
- * produce a run directory and an empty `trials.jsonl` — a *plausible empty result*, which is the worst
- * outcome an experiment can have. Step 5's removal makes the failure visible as failure.
+ * Step 3 before 4 is not tidiness: `register()` resolves even when the mount failed, so skipping the
+ * read-back produced a run directory with an empty `trials.jsonl` — a plausible empty result, the worst
+ * outcome an experiment can have.
  *
  * @module dsh-harness-dispatcher/tools/harness-run
  */
@@ -34,9 +30,9 @@ import type { FoldCollector } from '../collector.ts'
 import { assertFaultsReachable, normalizeFaults } from '../fault.ts'
 import type { FaultGate } from '../gate.ts'
 import type { ResolveDeps } from '../harness.ts'
-import { harnessLabel, harnessRows, mountPathFor, resolveHarness } from '../harness.ts'
+import { harnessLabel, harnessRows, mountPathFor, resolveHarness, sealedRows } from '../harness.ts'
 import { openRun, stimulusRecord } from '../record.ts'
-import { mountSubject, presetIdFor } from '../subject.ts'
+import { hostToolNames, mountSubject, presetIdFor } from '../subject.ts'
 import type { Subject } from '../subject.ts'
 import { runTrial } from '../trial.ts'
 import type { TrialOutcome } from '../trial.ts'
@@ -179,6 +175,7 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
         // Everything that can be rejected is rejected before any host state exists.
         const harness = await resolveHarness(harnessInputOf(args), deps)
         const faults = normalizeFaults(faultsOf(args))
+        const sealed = args.harness?.sealed === true
         const trials = args.trials ?? 1
         if (!Number.isSafeInteger(trials) || trials < 1 || trials > deps.limits.maxTrials) {
           throw new Error(`trials must be an integer from 1 to ${String(deps.limits.maxTrials)}`)
@@ -218,7 +215,10 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
           subject = await mountSubject(ctx, {
             presetId,
             label: harnessLabel(harness.captured),
-            rows: harnessRows(harness.captured, mountPathFor(harness.captured, run.harnessPath)),
+            rows: [
+              ...sealedRows(sealed ? hostToolNames(ctx) : []),
+              ...harnessRows(harness.captured, mountPathFor(harness.captured, run.harnessPath)),
+            ],
           })
           // Only a harness that can actually receive them may claim them in its record.
           assertFaultsReachable(faults, subject.surface.tools)

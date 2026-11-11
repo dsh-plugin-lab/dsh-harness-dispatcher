@@ -10,7 +10,7 @@ import type { UserConfig } from 'tsdown'
  */
 export default [
   {
-    entry: { index: 'src/index.ts' },
+    entry: { index: 'src/index.ts', sealed: 'src/sealed.ts' },
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',

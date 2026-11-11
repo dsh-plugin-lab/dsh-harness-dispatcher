@@ -1,21 +1,15 @@
 /**
  * The skill this plugin registers for the agents that can use it.
  *
- * ## Why a skill, and why registered from code
+ * The tools are model-facing, so "how do I use this" is a prompt problem. A skill is the host's
+ * mechanism for exactly that: it sits in the catalogue until an agent loads it, so the instructions cost
+ * nothing until needed.
  *
- * The tools are model-facing, so "how do I use this" is a *prompt* problem, not a README problem. A
- * skill is the host's mechanism for exactly that: it sits in the skill catalogue until an agent loads
- * it, so the instructions cost nothing until they are needed.
+ * **Registered from code, not as files**, because a filesystem skill is only visible when a preset
+ * mounts a skill provider pointed at it — a preset that does not (such as `standard`) sees none of them.
+ * A pointer without a fallback fails silently, so this plugin carries its own text.
  *
- * **Registered from code rather than as a directory of files**, because a filesystem skill is only
- * visible when a preset mounts a skill provider pointed at it. `cordis-plugin-development`'s own note
- * says the same thing about the shipped skills: they appear in the catalogue because the `cordis` preset
- * points `skill-filesystem` at the package, and a preset that does not (such as `standard`) sees none of
- * them. A pointer without a fallback is a dead pointer that fails silently, so this plugin carries its
- * own text instead of assuming anyone changed a profile for it.
- *
- * `skills` is therefore an **optional** service: a profile without it gets no skill and everything else
- * still works.
+ * `skills` is therefore an **optional** service: no registry, no skill, everything else still works.
  *
  * @module dsh-harness-dispatcher/skill
  */
@@ -63,8 +57,11 @@ score anything — the records are the deliverable, and analysis happens outside
 4. **Change one thing and repeat.** Keep \`task_id\` and \`prompt\` **byte-identical** between harnesses.
    That is the whole experiment.
 
-## Three traps, in the order people hit them
+## Four traps, in the order people hit them
 
+- **A harness is a delta, not a world.** By default the subject also inherits every tool the host mounts
+  for itself. Add \`sealed: true\` and it sees only what its rows declare — without it you are comparing
+  two harnesses that share forty tools you never chose.
 - **Two namespaces.** \`harness.tools\` takes CATALOGUE KEYS (\`fs\`, \`pwsh\`); \`faults[].tool\` takes
   MODEL-FACING TOOL NAMES (\`read\`, \`grep\`). A fault naming a catalogue key never fires, and a fault that
   never fires still produces a clean-looking record.
