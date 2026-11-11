@@ -425,6 +425,12 @@ ctx（宿主）**，不是调用方 —— 条目落进全局层，与被遮对�
 `0 skill(s): no \`skill\` tool here, so none is loadable`。反过来，**harness 自己挂 `tool-skill` 时
 那条行属于 preset、豁免于 restrict，继承的目录照样会漏，且没有 API 能拦** —— 这是宿主的能力缺口。
 
+**第二次尝试为什么也没成，值得单独记：** 想拿到 scope 绑定的注册表，就得把 `skills` 写进那一行的
+`inject`（`ctx.get('skills')` 拿到的是宿主那份实例）。加上之后**那一行在 preset 里变成 PENDING**。
+判据是探针：在 `apply` 首行无条件 `throw`，结果**挂载照样成功、工具一个不少** —— 说明 `apply` 压根
+没执行。而 PENDING 既不在 `broken` 里也不在 `rowProblems` 里，所以「没生效」看起来和「生效了但没用」
+一模一样。这类失败只能靠「故意让它抛」抓。
+
 ---
 
 ## 8. 与 docs/ARCHITECTURE.md 的关系

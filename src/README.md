@@ -31,6 +31,7 @@ harness 文件的裸模块名只在那里解析得到（见 [AGENTS.md](AGENTS.m
 |---|---|---|---|
 | [harness.ts](harness.ts) | `resolveHarness` / `harnessRows` / `sealedRows` / `mountPathFor` / `harnessLabel` / `HarnessSpecError` | 三个工具 | **B8 / B15 / B19** + `harness` 单测 |
 | [sealed.ts](sealed.ts) | `apply` —— 一行 `tools.restrict`，遮掉继承来的工具 | `harness.ts` 的 `sealedRows` 生成它的行 | **B15 / B19**（只管工具；技能遮不住） |
+| [tool.ts](tool.ts) | `apply` + `toolSpecOf` —— 从行 config 长出一个模型可见工具 | 只在 harness 文件里按名字使用 | **B20** |
 | [shortcut.ts](shortcut.ts) | `normalizeShortcut` / `shortcutRows` / `shortcutLabel` | `harness` | `shortcut` 单测 |
 | [subject.ts](subject.ts) | `mountSubject` / `surfaceOf` / `hostToolNames` / `hostSkillNames` / `inheritedBy` / `rowProblems` / `presetIdFor` | 三个工具 | **B10 / B17**（`register` 后必须读回 `.broken`；`surface` 只报能到达的） |
 
@@ -82,6 +83,7 @@ harness 文件的裸模块名只在那里解析得到（见 [AGENTS.md](AGENTS.m
 | 挂载 / 审计 / 探针的顺序 | `subject.ts` → 红线 **B10** |
 | `sealed`（工具集封闭） | `sealed.ts` + `harness.ts` 的 `sealedRows` + `subject.ts` 的 `inheritedBy` → 红线 **B15**（遮罩行必须在前）/ **B19**（不承诺遮技能） |
 | `surface` 报什么（能到达 vs 存在） | `subject.ts` 的 `loadableSkills` → 红线 **B17** → `tools/harness-inspect` 的那行文案 |
+| 造工具 / 改工具的语义 | `tool.ts` 的 `toolSpecOf` → 红线 **B20** → [造工具与改工具](../docs/ARCHITECTURE.md#342-造工具与改工具dsh-harness-dispatchertool) → `package.json` 的 `exports` 与 `tsdown.config.ts` 的 `entry` |
 | run 目录的形状（新增落盘文件） | `record.ts` 的 `openRun` → [数据出口只有两个函数](../docs/ARCHITECTURE.md#44-数据出口只有两个函数) → 两个 README 的目录树 |
 | 工具目录新增一个键 | `catalog.ts` → 红线 **B1** → `catalogLine()` |
 | 给某个东西改名 | 红线 **B13/B14** 兜住源码与文档两侧 |

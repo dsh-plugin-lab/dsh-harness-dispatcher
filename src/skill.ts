@@ -61,7 +61,8 @@ score anything — the records are the deliverable, and analysis happens outside
 
 - **A harness is a delta, not a world.** By default the subject also inherits every tool the host mounts
   for itself. Add \`sealed: true\` and it sees only what its rows declare — without it you are comparing
-  two harnesses that share forty tools you never chose.
+  two harnesses that share tools you never chose. Skills are the exception: they cannot be masked, so
+  they are reachable only when the subject has a \`skill\` tool, which sealing removes.
 - **Two namespaces.** \`harness.tools\` takes CATALOGUE KEYS (\`fs\`, \`pwsh\`); \`faults[].tool\` takes
   MODEL-FACING TOOL NAMES (\`read\`, \`grep\`). A fault naming a catalogue key never fires, and a fault that
   never fires still produces a clean-looking record.
@@ -70,6 +71,20 @@ score anything — the records are the deliverable, and analysis happens outside
 - **Compare by \`stimulus.fingerprint\`, never by file name.** It covers the harness content plus the route
   and the delegation depth. Two runs with equal fingerprints applied the same thing; two with different
   ones did not, whatever the files are called.
+
+## Defining your own tool
+
+A description is the only routing signal the model sees before calling, so it is often the variable. A
+harness file can stand a tool up without a package:
+
+\`\`\`yaml
+- name: dsh-harness-dispatcher/tool
+  config: { name: search_docs, description: Search the docs., result: no results }
+\`\`\`
+
+Reusing a name the host already has **replaces** it, so changing a shipped tool's description or
+parameters is the same four fields. Two rules: a name already used *inside this harness* fails the mount
+(edit that row instead), and this tool always succeeds — failure and latency stay in \`faults\`.
 
 ## What the records say
 

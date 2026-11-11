@@ -234,6 +234,11 @@ ctx（宿主）**，不是调用方 —— 条目落进全局层，与被遮对�
 天然没有技能通道。**但如果 harness 自己挂 `tool-skill`，那条行属于 preset、豁免于 restrict，
 宿主技能目录照样会到受试体手里，且没有 API 能拦。** 这是宿主的能力缺口，不是本仓的实现选择。
 
+另一条路也堵死了，记下来免得再试：想拿到 scope 绑定的注册表，得把 `skills` 写进那一行的
+`inject`。**实测（`0.2.2-rc.1`）加了它以后那一行在 preset 里变成 PENDING** —— 探针在 `apply`
+首行无条件 `throw`，挂载却照样成功、工具一个不少，说明 `apply` 压根没执行。不激活、也不报错，
+所以这条比「注册到错层」更隐蔽。
+
 实测（`0.2.2-rc.1`，同一天两次 `harness_inspect`）：
 
 | harness | 工具 | 技能 |
@@ -244,6 +249,42 @@ ctx（宿主）**，不是调用方 —— 条目落进全局层，与被遮对�
 红线 **B15** 钉住顺序与入口，**B17** 钉住「探针只报能到达的」，**B19** 钉住「`sealed` 不承诺它做不到的事」。
 
 **注意预设里写 `disabled: true` 减不掉宿主工具**：那只取消 preset 自己的那一行，宿主那份照旧生效。
+
+### 3.4.2 造工具与改工具：`dsh-harness-dispatcher/tool`
+
+工具的**描述**是模型唯一的路由信号，所以「描述写得准不准」是最该被当作变量的东西之一。没有这一行
+的时候，改一个描述要先建包、装进 profile、可能重启 —— 那条路把「改一个字、看一次」的免费回路直接
+掐断。有了它，一份 harness 文件就能**长出**一个工具，或者**盖掉**宿主的一个工具：
+
+```yaml
+- id: fake-search
+  name: dsh-harness-dispatcher/tool
+  config:
+    name: search_docs            # 模型看到的工具名
+    description: Search the docs. Use this before answering.
+    parameters:                  # 可省略 = 不收参数
+      query: { type: string, required: true }
+    result: no results           # 每次调用都返回这段文本
+```
+
+四个字段，没有小语言。三条边界都是实测的（`0.2.2-rc.1`）：
+
+| 情形 | 结果 |
+|---|---|
+| 新名字（宿主没有） | 只出现在这份 harness 的表面里，宿主和其他 agent 看不到 |
+| 宿主已有的名字（`read`） | 挂载成功，**盖掉**宿主的那个 —— 改描述、改参数就是这么做的 |
+| 与**同层**别的行重名 | 挂载抛 `tool "read" is already registered in this scope`，整份 harness 不可用 |
+
+第三条反过来证明前两条：注册确实落在 preset 层（和 `tool-fs` 同一层才撞得上），而不是全局层。
+
+**失败与延迟不在这里。** 这一行永远成功并返回 `result`；`fail` / `latency` 归 `faults`，它挂在工具
+管线上、对任何可见工具都生效，包括这一行造出来的那个。同一样东西两个机制，是评测台开始测量自己补丁
+的起点。
+
+**只造桩。** 有逻辑的工具仍然应该写成包：这一行给的是「名字 + 描述 + 参数 + 一句固定回答」，够用来
+测选择、测参数成形、测错误恢复，不够用来做事。
+
+**捷径形式用不了它**：`harness.tools` 只认目录键，要造工具必须写文件 —— 文件本来就是灵活那条路。
 
 ### 3.5 返回值是句柄，不是散文
 
@@ -342,6 +383,8 @@ harness 文件所在目录，而 run 目录不在任何解析基准上，挂副�
 | `harness_inspect` | 挂载 + 审计 + 探针（`acquireScope`），**零模型成本**；也接受 `preset` | **已实现** |
 | `harness_export` | `readDocument()` → 一份能跑的 harness 文件 | **已实现** |
 | 使用说明 skill | [src/skill.ts](../src/skill.ts)，代码注册、`skills` 服务可选 | **已实现** |
+| 造工具 / 改工具 | preset 行 [src/tool.ts](../src/tool.ts)：一份文件定义或覆盖一个工具 | **已实现** |
+| 封闭宿主工具与技能通道 | preset 行 [src/sealed.ts](../src/sealed.ts)，见「增量与封闭」 | **已实现**（技能只能靠不给通道） |
 | `session/event` 折叠 | [src/fold.ts](../src/fold.ts)：受试体做了什么 + 被给了什么 | **已实现** |
 | 工具管线故障注入 | [src/gate.ts](../src/gate.ts)，三种模式 | **已实现** |
 | JSONL 导出 | [src/record.ts](../src/record.ts) | **已实现** |
