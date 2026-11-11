@@ -29,9 +29,10 @@ harness 文件的裸模块名只在那里解析得到（见 [AGENTS.md](AGENTS.m
 
 | 文件 | 导出 | 谁依赖 | 改后必跑 |
 |---|---|---|---|
-| [harness.ts](harness.ts) | `resolveHarness` / `harnessRows` / `mountPathFor` / `harnessLabel` / `HarnessSpecError` | 三个工具 | **B8** + `harness` 单测 |
+| [harness.ts](harness.ts) | `resolveHarness` / `harnessRows` / `sealedRows` / `mountPathFor` / `harnessLabel` / `HarnessSpecError` | 三个工具 | **B8 / B15** + `harness` 单测 |
+| [sealed.ts](sealed.ts) | `apply` —— 一行 `tools.restrict`，遮掉继承来的工具 | `harness.ts` 的 `sealedRows` 生成它的行 | **B15** |
 | [shortcut.ts](shortcut.ts) | `normalizeShortcut` / `shortcutRows` / `shortcutLabel` | `harness` | `shortcut` 单测 |
-| [subject.ts](subject.ts) | `mountSubject` / `surfaceOf` / `rowProblems` / `presetIdFor` | 三个工具 | **B10**（`register` 后必须读回 `.broken`） |
+| [subject.ts](subject.ts) | `mountSubject` / `surfaceOf` / `hostToolNames` / `rowProblems` / `presetIdFor` | 三个工具 | **B10**（`register` 后必须读回 `.broken`） |
 
 `harness.ts` 是全仓最危险的文件：它同时拥有「取字节 / 算摘要 / 生成挂载行 / 决定挂哪个路径」。
 `mountPathFor` 与 `harnessRows` 的分工是**真机纠正出来的**，别再合并回去。
@@ -77,6 +78,7 @@ harness 文件的裸模块名只在那里解析得到（见 [AGENTS.md](AGENTS.m
 | 工具的名字 / 数量 / 参数 schema | 本文件 → [能力面](../docs/ARCHITECTURE.md#5-能力面) → 红线 B11/B14 |
 | harness 的形状（行列表 / 捷径标量 / 判据三层） | [Harness 的形状](../.agents/notes/2026-11-11-harness-shape.md) 是**判据** → `harness.ts`（捕获）→ `shortcut.ts`（糖）→ `record.ts` 的 `StimulusRecord` |
 | 挂载 / 审计 / 探针的顺序 | `subject.ts` → 红线 **B10** |
+| `sealed`（工具集封闭） | `sealed.ts` + `harness.ts` 的 `sealedRows` + `subject.ts` 的 `hostToolNames` → 红线 **B15**（遮罩行必须在前） |
 | run 目录的形状（新增落盘文件） | `record.ts` 的 `openRun` → [数据出口只有两个函数](../docs/ARCHITECTURE.md#44-数据出口只有两个函数) → 两个 README 的目录树 |
 | 工具目录新增一个键 | `catalog.ts` → 红线 **B1** → `catalogLine()` |
 | 给某个东西改名 | 红线 **B13/B14** 兜住源码与文档两侧 |

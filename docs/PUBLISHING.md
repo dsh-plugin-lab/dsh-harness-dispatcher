@@ -1,7 +1,8 @@
 # PUBLISHING — 第一次发版前必须做完的事
 
-**本文职责**：本仓发布的前置条件与流程。**不负责**：宿主兼容范围（现查 `package.json` 的 `engines.dsh`）、
-跨仓判据（在组织仓）、版本号（在 `package.json`）。
+**本文职责**：本仓发布的前置条件与流程，以及与组织判据的对齐方法。**不负责**：宿主兼容范围
+（现查 `package.json` 的 `engines.dsh`）、版本号（在 `package.json`）、日常维护规则（在
+[AGENTS.md](../AGENTS.md)）。
 
 **为什么这篇这么短**：本仓**从未发布过**。写一份照抄兄弟仓的手册，等于把**别人的**版本线、
 tag 形态、事故判例搬进来 —— 它们会漂，而且是**照着做才发现不对**的那种漂。
@@ -18,7 +19,7 @@ tag 形态、事故判例搬进来 —— 它们会漂，而且是**照着做才
   发布完**弃掉草稿**。
 - **发布态断言**：[scripts/check-release.mjs](../scripts/check-release.mjs)，
   已进 `pnpm run check`。它现在断言的东西**包含**「拒绝 `private: true`」。
-- **红线**：[test/redlines.test.ts](../test/redlines.test.ts)，8 组 23 条，已做反向控制。
+- **红线**：[test/redlines.test.ts](../test/redlines.test.ts)，15 组 52 条，已做反向控制。
 - **组织判据**：自动发现本仓（`dsh-` 前缀 + 清单有 `dsh` 字段），
   当前 `14 checks, 0 new findings`。
 
@@ -41,3 +42,40 @@ tag 形态、事故判例搬进来 —— 它们会漂，而且是**照着做才
 
 `AGENTS.md` 的「发布前」节与本文都要同批改：把「从未发布」这句换成当前的版本线判例。
 **一条会漂的断言留在原地比没有更坏** —— 它读起来像事实。
+
+---
+
+## 与组织判据对齐
+
+组织仓 `dsh-plugin-lab/.github` 的 `scripts/check-criteria.mjs` 按 **`dsh-` 前缀 + 清单有 `dsh` 字段**
+**自动发现**本仓，每周独立核一次。**新建或改名都不需要登记**，但**必须满足它**。
+2026-11-10 首次核出 6 条（缺 `release.yml` 四条规则 / 缺 `release-drafter.yml` / 缺红线文件），
+已补齐，现为 `14 checks, 0 new findings`。
+
+- **核它要 `GITHUB_TOKEN`**：`GITHUB_TOKEN=$(gh auth token) node scripts/check-criteria.mjs`
+  —— 不带 token 会匿名超时，**超时不是通过**。
+- **`release.yml` 不属于模板生成物**：取来之后必须读一遍它断言了什么（发布顺序、OIDC、tag 形状都是
+  不可撤销的动作）。**2026-11-11 实测它带着别人的包名** —— 守卫写的是 `npm view "dsh-dsml-rescue@$VERSION"`，
+  于是永远查到「已存在」、永远跳过发布、**报成功但什么都没发**。已修。照抄兄弟仓的代价就是这个。
+
+### 怎么对齐（用组织仓自己的工具，别凭记忆）
+
+```bash
+node <组织仓>/scripts/scaffold.mjs <临时目录> --host-only --name dsh-harness-dispatcher
+node <组织仓>/scripts/scaffold.mjs check <本仓路径>     # 期望 all byte-identical
+```
+
+`scaffold check` 只比**三个**身份件（`.node-version` / `release-drafter.yml` / `.prettierignore`），
+**其余文件要自己比**。2026-11-11 人工逐项比抓出四处偏差，两处会伤到人：`.gitignore` 丢了
+`*.local.yml`（凭据文件可能被提交）、`scripts/check-release.mjs` 是兄弟仓的旧版（发布断言落后）。
+
+### 有意保留的偏离（**每条都要有理由，否则就是「这个仓特殊」**）
+
+| 偏离 | 理由 |
+|---|---|
+| `test/smoke.test.ts` 不含模板的 `apply({})` 断言 | `apply` 读四个服务，空 ctx 必抛；保留它会逼出永不发生的防御分支 |
+| `check` 是六步（模板四步） | 修 CI 红根因，红线 B9 钉住 |
+| `files` 含 [README_zh.md](../README_zh.md) | 双语文档是实际惯例 |
+| devDependencies 比模板多六个 `@deepseek-ai/*` | 本仓真的 import 它们；模板那份起始集自称未经校验 |
+| 没有 `docs/.gitkeep` / `.agents/notes/.gitkeep` | 两个目录都已非空，占位文件是噪音 |
+| `vitest.config.ts` 不含 `contract-live-*` 排除 | 本仓没有 contract 测试 |

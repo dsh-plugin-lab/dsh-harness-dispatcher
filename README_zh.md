@@ -42,6 +42,9 @@ Model + Harness = Agent
   于是「同一份 harness」不靠文件位置保证，靠 run 目录里的副本 + 记录里的 `stimulus.fingerprint`。
 - **跑之前先 `harness_inspect`。** 它不花钱，而且它与 `harness_run` 走同一段解析 ——
   inspect 说行，run 跑的才是那个。
+- **默认是增量，除非你封起来。** 挂成 preset 之后它住在宿主里面，所以受试体默认还会继承宿主自己挂的
+  全部工具 —— 你比来比去的每个变体都共享那四十来个你从没选过的工具。`sealed: true` 把这些遮掉，
+  只剩 harness 自己声明的东西。**工具集是变量时就用它**；要问"这份 harness 在这套部署里能不能跑"时别用。
 - **捷径是糖，不是定义。**`harness.tools` 取自固定目录键、`harness.persona` 是枚举 ——
   它编译成同样的行列表并同样落盘。要表达糖装不下的东西（分组、`isolate`、skills、`!!js` 条件），写文件。
 - **文件由宿主自己解析**（`cordis:include`），本插件不实现第二套方言。

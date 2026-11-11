@@ -196,7 +196,6 @@ roundtrip equal: true
 且受试体不会捡到评测台没选的工具的原因。
 
 ### 3.4 挂载的五条硬约束（都抛错，不警告）
-
 `检出: agent-preset-registry/src/definition.ts:18-39`、`mount.ts:204-216`、`index.ts:84`：
 
 | 约束 | 踩中的样子 |
@@ -208,6 +207,21 @@ roundtrip equal: true
 | preset `id` 全局唯一 | `Duplicate agent preset` |
 
 `id` 那条决定了 **preset id 必须按 run 命名**（`bench-<runId>`），否则并发的第二次 run 直接失败。
+
+### 3.4.1 增量与封闭：`sealed`
+
+preset 挂成宿主树的孩子，所以**默认它只是一个增量** —— 受试体还会继承宿主自己挂的全部工具。
+这对测量是致命的：两个变体共享四十个没人选过的工具，「工具集」就不是受控变量了。
+
+封闭靠 `tools.restrict({ deny })`，它只遮**调用它的那个作用域**，而作用域自身的注册豁免。于是：
+
+- 遮罩必须是 preset 里的**一行**（`src/sealed.ts`），不能是外部调用 —— 作用域租约只给 `key`，没有 ctx；
+- 那一行必须排在 harness 行**之前**，否则连 harness 自己的工具一起被遮，受试体什么工具都没有；
+- `deny` 取宿主作用域的全局工具名（`hostToolNames`），而不是 harness 声明了什么。
+
+实测（`0.2.2-rc.1`）：极简 harness 41 → 4，standard 69 → 32。红线 **B15** 钉住顺序与入口。
+
+**注意预设里写 `disabled: true` 减不掉宿主工具**：那只取消 preset 自己的那一行，宿主那份照旧生效。
 
 ### 3.5 返回值是句柄，不是散文
 

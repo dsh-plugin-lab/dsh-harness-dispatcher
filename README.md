@@ -51,6 +51,11 @@ has to hunt for the original file:
   `stimulus.fingerprint`, not by where the file sits.
 - **Inspect before you run.** It is free, and it is the same resolution `harness_run` uses — whatever
   the inspection says about a harness, the run applies exactly that.
+- **A harness is a delta unless you seal it.** Mounted as a preset it sits inside the host, so by default
+  the subject also inherits every tool the host mounts for itself — the same forty-odd tools in every
+  variant you ever compare. `sealed: true` masks those, leaving exactly what the harness declares. Use it
+  whenever the tool set is the variable; leave it off when the question is "does this harness work in
+  *this* deployment".
 - **The shortcut is sugar, not the definition.** `harness.tools` names keys from a fixed catalogue and
   `harness.persona` is an enum; it compiles into the same kind of row list and is captured the same way.
   What the shortcut cannot express (groups, `isolate`, skills, `!!js` conditions) is a file.

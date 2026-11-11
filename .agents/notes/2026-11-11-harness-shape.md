@@ -30,10 +30,16 @@ harness_run({
   task_id, prompt, trials,
   harness: { file: 'minus-web' },                       // 主路：一个 harness 文件
   harness: { tools: ['fs'], persona: 'terse' },         // 捷径：几个标量
+  harness: { file: 'minus-web', sealed: true },          // 同上，但工具集只由文件决定
   // 路由与深度是请求级，和 harness 并列，不在它里面
   provider?, model?, max_depth?, faults?
 })
 ```
+
+**`sealed` 是 2026-11-11 补上的，它改变了本笔记的默认心智模型。** 最初写的是「harness 是受试体的
+装配」，实现出来才发现 preset 挂在宿主树里，**默认只是一个增量** —— 受试体还继承宿主自己的四十来个
+工具。于是「工具集」根本不是受控变量。`sealed` 用一行 `tools.restrict` 把继承的那部分遮掉，实测
+极简 41→4、standard 69→32。代价与顺序约束见 §7.4；`disabled: true` 做不到这件事。
 
 **两条形式二选一，但只有一条实现路径。** 捷径在 `openRun` 之前就被编译成一份行列表并序列化成
 `harness.json`；此后两条输入完全无差别。记录里只保留 `stimulus.harness.source: 'file' | 'shortcut'`。
@@ -363,6 +369,18 @@ roundtrip equal: true
 于是那个「没有警告」什么都不证明，结论已撤回。
 
 **一个不可能失败的检查不是检查。** 这也是为什么本仓把「反向控制」写成硬纪律，而不是可选项。
+
+### 7.4 同一个错误犯了第二次：`disabled: true` 减不掉宿主工具
+
+发现工具会从宿主漏进来之后，我先试的是「在 preset 里把宿主那些工具行逐个 `disabled: true`」。
+写了一份 86 行的文件，**工具数一个没少（41 → 41）**。
+
+真机制：preset 里同 id 的 `disabled` 只取消 **preset 自己的那一行**；宿主那一行不在这棵树里，
+取消不了。我先看到的 41 → 37 其实是「没有加」而不是「减掉了」—— 又一次把相关性当成因果。
+
+真正能减的是 `tools.restrict`，而它只作用于**调用它的作用域**。所以遮罩必须是 preset 里的**一行**，
+且排在 harness 行之前（§1.2）。这条顺序不是风格：反过来的话受试体一个工具都看不见，
+而「看得见的空结果」比报错危险得多。红线 **B15** 钉住它。
 
 ---
 
