@@ -24,6 +24,8 @@ import { harnessRows, harnessLabel, sealedRows } from '../src/harness.ts'
 import { jobOutcomeOf } from '../src/jobs.ts'
 import { normalizeShortcut, shortcutRows } from '../src/shortcut.ts'
 import { SKILL_NAME, readSkill, registerSkill, splitFrontmatter } from '../src/skill.ts'
+import { contentBlocksOf } from '../src/text.ts'
+import { modelLines } from '../src/tools/harness-inspect.ts'
 import { ATTACHMENTS_PARAMETER } from '../src/tools/params.ts'
 import { summaryLine } from '../src/run.ts'
 import { presetIdFor, presetSummaries, rowWarnings } from '../src/subject.ts'
@@ -223,8 +225,14 @@ describe('B4 — a record holds facts, and no secrets', () => {
     expect(record).toMatch(/never put credentials/i)
   })
 
-  it('truncates the subject output rather than storing a transcript', () => {
-    expect(sources().get('src/text.ts')).toMatch(/MAX_OUTPUT\s*=\s*\d{3,}/)
+  it('keeps the subject output whole, because a cut cannot be recomputed', () => {
+    // This field was capped at 4 000 characters while the record was the only place the answer could
+    // live. It is not any more, and the raw log is an order of magnitude larger on a trivial trial, so
+    // the cap no longer bought anything — while a prefix is a different answer from an answer, and
+    // nothing downstream can tell which one it is holding.
+    const answer = 'x'.repeat(20_000)
+    expect(contentBlocksOf([{ type: 'text', text: answer }])).toHaveLength(20_000)
+    expect(sources().get('src/text.ts')).not.toMatch(/MAX_OUTPUT/)
   })
 })
 
@@ -1088,9 +1096,15 @@ describe('B21 — a caller who knows nothing can still find out what exists', ()
    */
   it('lists presets when no target is named, instead of demanding one', () => {
     const inspect = sources().get('src/tools/harness-inspect.ts') ?? ''
-    // The guard that used to reject "neither" now answers it.
+    // The guard that used to reject "neither" now answers it: naming no target and no route reaches the
+    // listing rather than a complaint.
     expect(inspect).toContain('presetList(')
-    expect(inspect).toMatch(/args\.preset === undefined && args\.harness === undefined/)
+    expect(inspect).toMatch(
+      /const targeted = args\.preset !== undefined \|\| args\.harness !== undefined/,
+    )
+    expect(inspect).toMatch(
+      /if \(!targeted && args\.provider === undefined && args\.model === undefined\) \{\s*return await listingOf\(ctx\)/,
+    )
   })
 
   it('names the default, so a caller can pick the one a bare session would use', () => {
@@ -1112,6 +1126,45 @@ describe('B21 — a caller who knows nothing can still find out what exists', ()
     expect(broken?.broken).toContain('row 3 names no plugin')
     const inspect = sources().get('src/tools/harness-inspect.ts') ?? ''
     expect(inspect).toMatch(/cannot mount/)
+  })
+
+  it('asks the cheap question cheaply, and the expensive one separately', () => {
+    // The asymmetry is in the host's own signatures: `listProviders()` returns an array because it reads
+    // a registry, while `listModels()` returns a Promise because the adapter decides whether answering
+    // means asking its endpoint. Two entries, not one: folding the per-route call into the bare listing
+    // would make every caller who only wants "what presets exist" wait on an adapter, and would let one
+    // unreachable provider take the local half down with it.
+    const inspect = sources().get('src/tools/harness-inspect.ts') ?? ''
+    expect(inspect).toContain('listProviders()')
+    expect(inspect).toMatch(/await llm\.listModels\(provider\)/)
+    // The bare listing must not await the per-route call: that is the whole split.
+    const listing = inspect.slice(
+      inspect.indexOf('async function listingOf'),
+      inspect.indexOf('async function modelsOf'),
+    )
+    expect(listing).not.toBe('')
+    expect(listing).not.toContain('listModels')
+    // And a failure to enumerate is reported, never thrown: an unreachable route is an observation.
+    expect(inspect).toMatch(/cannot list the models of/)
+  })
+
+  it('says unknown input modalities as unknown, not as "no image"', () => {
+    // This is the value that decides whether an attached image reaches the subject or is swapped for a
+    // placeholder. Collapsing "absent" into "text only" sends the operator to drop an image the route
+    // would have taken; the host's own gate keeps the two apart, and so must the listing.
+    const [unknown] = [
+      modelLines('p', [{ id: 'm', name: 'm', description: null, inputModalities: null }]),
+    ]
+    expect(unknown).toContain('input unknown')
+    expect(unknown).not.toMatch(/input text$/)
+    expect(
+      modelLines('p', [{ id: 'm', name: 'm', description: null, inputModalities: ['text'] }]),
+    ).toContain('input text')
+    expect(
+      modelLines('p', [
+        { id: 'm', name: 'm', description: null, inputModalities: ['text', 'image'] },
+      ]),
+    ).toContain('input text+image')
   })
 })
 
@@ -1143,6 +1196,7 @@ describe('B22 — the skill is one page, and it says everything once', () => {
   it('keeps every fact that costs an experiment when missed', () => {
     for (const fact of [
       /no arguments/, // discovery comes first: without an id nothing else works
+      /declare `image`\s+input/, // the route listing exists so an image can be aimed at a model that takes one
       /CATALOGUE KEYS/,
       /MODEL-FACING TOOL NAMES/,
       /fingerprint/,
@@ -1157,11 +1211,39 @@ describe('B22 — the skill is one page, and it says everything once', () => {
       /run_in_background/, // a long run is a job, not a held turn
       /attachments/, // a task can carry a picture or a file, and the two are different experiments
       /placeholder line/, // an image the route cannot deliver is refused, not silently swapped
-      /tool call aborted/, // a stopped foreground call returns the host's error, not a summary
-      /interrupted: true/, // drop ONE trial and keep the run: that is the child's own interrupt
     ]) {
       expect(body, `the skill no longer states ${String(fact)}`).toMatch(fact)
     }
+  })
+
+  it('carries only what the reader can act on, and leaves the rest to the maintainer', () => {
+    /**
+     * The line this holds: a skill is read by an agent about to call these tools, so a fact earns its
+     * place only if it changes what that agent does — either the arguments it passes or how it reads the
+     * record. Anything else is a *property of the system*: knowable, worth writing down, and in the way
+     * here, because it is paid for on every load.
+     *
+     * Two gates, and the second one is why the skill is not a second copy of the schemas: the tool
+     * descriptions are already in context whenever the tools are.
+     *
+     * The cases below were all measured in the skill and are all unactionable by its reader.
+     */
+    for (const [why, phrase] of [
+      // An agent does not stop its own turn; the operator does. It cannot prevent this, and the error it
+      // eventually sees names itself. Recorded in AGENTS.md and docs/ARCHITECTURE.md §5.3 instead.
+      ['the operator stopping the run is not the reader’s action', /Stopping your own turn/],
+      ['a cut foreground call explains itself when it happens', /tool call aborted/],
+      // Retired from the record by B30 — the skill was pointing at a field that no longer exists.
+      ['`interrupted` is not in the record any more', /interrupted: true/],
+      ['a prefix warning is a changelog line, not a usage fact', /stored \*\*whole\*\*/],
+      ['directory size is a maintenance observation', /dominates the directory/],
+    ] as const) {
+      expect(body, `the skill carries ${why}`).not.toMatch(phrase)
+    }
+    // Not dropped — relocated. The knowledge has one home, and it is the maintainer's.
+    const root = readFileSync(join(ROOT, 'AGENTS.md'), 'utf8')
+    expect(root).toMatch(/停止停一切/)
+    expect(root).toMatch(/tool call aborted/)
   })
 
   it('is a real skill file: frontmatter with a matching name and a routing description', () => {
@@ -1507,6 +1589,19 @@ describe('B29 — nothing is bound to one machine', () => {
     expect(readme).toContain('$DSH_HOME/harness-dispatcher/runs')
     expect(readme).toContain('$DSH_HOME/profiles/<name>/harness')
     expect(readme).not.toContain('~/.dsh/harness-dispatcher/harness')
+  })
+
+  it('lets a reader switch language from either front door', () => {
+    // Two READMEs that do not link to each other are two documents, and whichever one a search engine
+    // happens to index is the only one anyone reads. The pair is a switch, so each half has to name the
+    // other — and mark where the reader already is.
+    const english = readFileSync(join(ROOT, 'README.md'), 'utf8')
+    const chinese = readFileSync(join(ROOT, 'README_zh.md'), 'utf8')
+    expect(english).toContain('href="README_zh.md"')
+    expect(chinese).toContain('href="README.md"')
+    // The current language is emphasised in both, so the line reads as a switch rather than two links.
+    expect(english).toMatch(/<strong><a href="README\.md">English<\/a><\/strong>/)
+    expect(chinese).toMatch(/<strong><a href="README_zh\.md">简体中文<\/a><\/strong>/)
   })
 })
 
