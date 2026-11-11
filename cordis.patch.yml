@@ -5,8 +5,8 @@
 # `name` must be a module id the Loader can resolve from the profile's node_modules — that is this
 # package's own name, so the row resolves to the directory this file lives in.
 #
-# `config.outputRoot` is left unset on purpose: the plugin computes a default under the user's home
-# directory. Set it explicitly if records should land somewhere reviewable, e.g.
+# `config.outputRoot` is left unset on purpose: the plugin computes a default under `$DSH_HOME`
+# (`~/.dsh` when that is unset). Set it explicitly if records should land somewhere reviewable, e.g.
 #   config:
 #     outputRoot: <an absolute directory for the records>
 #

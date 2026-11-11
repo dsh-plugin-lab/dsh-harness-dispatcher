@@ -11,11 +11,12 @@
 
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { parameterSchemaSpecToJsonSchema, validateArgs } from '@deepseek-ai/dsh-tools'
 import { CATALOG, DEFAULT_TOOLS, TOOL_CATALOG, TOOL_KEYS } from '../src/catalog.ts'
+import { resolveConfig } from '../src/config.ts'
 import { imageDeliveryProblem, resolvePrompt } from '../src/attachments.ts'
 import { foldEvent, emptyFold, finishFold, summarize } from '../src/fold.ts'
 import { normalizeFaults } from '../src/fault.ts'
@@ -50,6 +51,16 @@ function sources(): Map<string, string> {
 }
 
 const DEFAULTS = { tools: ['fs'] }
+
+/** A configuration with both path fields blank, so `resolveConfig` has to compute them. */
+const BLANK_CONFIG = {
+  outputRoot: '',
+  harnessDir: '',
+  defaultTools: [...DEFAULT_TOOLS],
+  defaultMaxDepth: 1,
+  maxTrials: 10,
+  trialTimeoutMs: 0,
+}
 
 /**
  * The code that performs a run, wherever it currently lives.
@@ -1458,6 +1469,25 @@ describe('B29 — nothing is bound to one machine', () => {
     const config = stripComments(sources().get('src/config.ts') ?? '')
     expect(config).toContain('dshHomePath(')
     expect(config).not.toContain('homedir')
+  })
+
+  it('follows `$DSH_HOME`, so an isolated instance writes into its own tree', () => {
+    // Behavioural, because `dshHomePath(` appearing in the source is not the same as it being asked.
+    // A profile file URL stands in for the host's base URL: harness files go there, records go home.
+    // Two distinct fake directories, so "inside the profile" cannot pass by looking like "inside home".
+    const profile = join(ROOT, 'test-fixtures-profile')
+    const URL = pathToFileURL(join(profile, 'cordis.patch.yml')).href
+    const previous = process.env.DSH_HOME
+    process.env.DSH_HOME = join(ROOT, 'test-fixtures-home')
+    try {
+      const resolved = resolveConfig({ ...BLANK_CONFIG }, URL)
+      expect(resolved.outputRoot.startsWith(process.env.DSH_HOME)).toBe(true)
+      // The profile wins for harness files even when a home is set: only that location can import rows.
+      expect(resolved.harnessDir.startsWith(profile)).toBe(true)
+    } finally {
+      if (previous === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previous
+    }
   })
 
   it('names no user directory anywhere in the repository', () => {

@@ -388,6 +388,28 @@ ownEvents()      @deprecated … new calls are prohibited
   README.txt        # 给读数据的人：该比 stimulus.fingerprint
 ```
 
+**两个根，分开是设计不是巧合。** `outputRoot` 默认 `$DSH_HOME/harness-dispatcher/runs`
+（`$DSH_HOME` 未设置时即 `~/.dsh/…`），走宿主的 `dshHomePath()` —— 不是 `homedir() + '.dsh'`，
+否则一个 `$DSH_HOME` 隔离实例会把记录写进默认实例的树里。`harnessDir` 默认
+**`<profile>/harness`**：harness 文件里的裸模块名只在 profile 树或 link 包里解析得到，
+导出到别处就会产出**跑不了的文件**。所以「记录在哪」与「harness 文件在哪」不是一个问题，
+**`$DSH_HOME/harness-dispatcher/harness` 不存在** —— 那只是上下文没有 profile 文件时的兜底。
+
+**管道全貌**（每一格的失效方式都在别处钉着）：
+
+```
+harness 文件 / 捷径 ──捕获──→ 字节 + 摘要 + 行  ← 副本进 run 目录（证据），挂的是原文件（B8）
+        │
+        ├──审计──→ problems / warnings（挂得上吗、有没有行不出力）──── 不通过就不开跑（B5/B6）
+        │
+        └──开跑──→ 每个 trial：建 preset → 注入故障门 → 起子 agent → 折叠 session/event
+                                                                  → trials.jsonl 一行
+                                                                  → finally 里 dispose 全部（B6）
+```
+
+`openRun` 写 `run.json` + `harness.<ext>` + `README.txt`，`append()` 写 `trials.jsonl`；
+`discard()` 在**一条记录都没有**时删掉整个目录。
+
 **副本是证据，不是执行体。** 挂载用的是**操作者那份原文件**：宿主把 include 的解析基准设成
 harness 文件所在目录，而 run 目录不在任何解析基准上，挂副本会让文件里每一行都 import 失败
 （真机实测，见 [真机状态](../.agents/notes/2026-11-11-harness-shape.md#7-真机状态2026-11-11宿主-022-rc1)）。

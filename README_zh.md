@@ -27,7 +27,15 @@ Model + Harness = Agent
 - **一个随包注册的 skill**（`dsh-harness-dispatcher`，与包同名）：把这条回路和两个命名空间陷阱写在里面，
   agent 自己会找到。
 
-一次 run 一个目录，**自足**：harness 的逐字副本就在里面，不用回头找原文件。
+一次 run 一个目录，**自足**：harness 的逐字副本就在里面，不用回头找原文件。**两个根，分开是有意的**：
+
+| | 默认 | 为什么在那 |
+|---|---|---|
+| **记录**（`outputRoot`） | `$DSH_HOME/harness-dispatcher/runs/<runId>/` | 用户数据；一次 run 一个自足目录 |
+| **harness 文件**（`harnessDir`） | `<profile>/harness/` | harness 文件里的裸模块名只在 profile 树内解析得到，导出到别处就是**跑不了的文件** |
+
+`$DSH_HOME` 没设时分别是 `~/.dsh/harness-dispatcher/runs/` 与 `~/.dsh/profiles/<profile>/harness/`。
+**不存在 `<DSH_HOME>/harness-dispatcher/harness/`** —— 那只是「上下文里根本没有 profile 文件」时的兜底。
 
 ```text
 <outputRoot>/<runId>/
@@ -66,8 +74,8 @@ Model + Harness = Agent
 
 | 字段 | 默认 | 含义 |
 |---|---|---|
-| `outputRoot` | `~/.dsh/harness-dispatcher/runs` | 每条 run 一个子目录的父目录 |
-| `harnessDir` | `~/.dsh/harness-dispatcher/harness` | 裸 harness 名解析的目录，`harness_export` 也写这里 |
+| `outputRoot` | `$DSH_HOME/harness-dispatcher/runs`（未设置时即 `~/.dsh/…`） | 每条 run 一个子目录的父目录 |
+| `harnessDir` | `<profile>/harness` | 裸 harness 名解析的目录，`harness_export` 也写这里。**故意落在 profile 内**：放到别处的 harness 文件 import 不了自己的行 |
 | `defaultTools` | `fs`、`fs-search`、`pwsh` | 快捷方式未指定工具时用的目录键 |
 | `defaultMaxDepth` | `1` | 授予受试体的委派预算 |
 | `maxTrials` | `10` | 单次调用允许的 trial 上限 |

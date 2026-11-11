@@ -34,7 +34,16 @@ one.
   loop and the traps that each cost an experiment, so an agent finds them without reading source.
 
 Records land in one **self-sufficient** directory per run — the harness it ran is copied in, so nobody
-has to hunt for the original file:
+has to hunt for the original file. Two different roots, and the split is deliberate:
+
+| | Default | Why there |
+|---|---|---|
+| **Records** (`outputRoot`) | `$DSH_HOME/harness-dispatcher/runs/<runId>/` | user data; one directory per run, self-sufficient |
+| **Harness files** (`harnessDir`) | `<profile>/harness/` | a harness file's bare row names only resolve inside a profile tree, so exporting them anywhere else produces files that cannot run |
+
+With `$DSH_HOME` unset these are `~/.dsh/harness-dispatcher/runs/` and
+`~/.dsh/profiles/<profile>/harness/`. **There is no `<DSH_HOME>/harness-dispatcher/harness/`** — that
+path is only the fallback for a context with no profile file at all.
 
 ```text
 <outputRoot>/<runId>/
@@ -80,8 +89,8 @@ Full rationale, with `file:line` evidence and the assumptions that turned out wr
 
 | Field | Default | Meaning |
 |---|---|---|
-| `outputRoot` | `~/.dsh/harness-dispatcher/runs` | Directory that receives one subdirectory per run |
-| `harnessDir` | `~/.dsh/harness-dispatcher/harness` | Where a bare harness name resolves, and where `harness_export` writes |
+| `outputRoot` | `$DSH_HOME/harness-dispatcher/runs`, i.e. `~/.dsh/…` when it is unset | Directory that receives one subdirectory per run |
+| `harnessDir` | `<profile>/harness` | Where a bare harness name resolves, and where `harness_export` writes. Inside the profile on purpose: a harness file elsewhere cannot import its own rows |
 | `defaultTools` | `fs`, `fs-search`, `pwsh` | Catalogue keys the shortcut uses when it names none |
 | `defaultMaxDepth` | `1` | Delegation budget granted to a subject |
 | `maxTrials` | `10` | Upper bound on trials per call |
