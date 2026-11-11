@@ -20,14 +20,14 @@ import { resolveConfig } from '../src/config.ts'
 import { imageDeliveryProblem, resolvePrompt } from '../src/attachments.ts'
 import { emptyFold, finishFold, foldEvent, summarize } from '../src/fold.ts'
 import { normalizeFaults } from '../src/fault.ts'
-import { harnessRows, harnessLabel, resolveHarness, sealedRows } from '../src/harness.ts'
+import { harnessRows, harnessLabel, mountRows, resolveHarness, sealedRows } from '../src/harness.ts'
 import { jobOutcomeOf } from '../src/jobs.ts'
 import { normalizeShortcut, shortcutRows } from '../src/shortcut.ts'
 import { SKILL_NAME, readSkill, registerSkill, splitFrontmatter } from '../src/skill.ts'
 import { contentBlocksOf } from '../src/text.ts'
-import { stimulusRecord } from '../src/record.ts'
 import { modelLines } from '../src/tools/harness-inspect.ts'
 import { ATTACHMENTS_PARAMETER } from '../src/tools/params.ts'
+import { stimulusRecord } from '../src/record.ts'
 import { summaryLine } from '../src/run.ts'
 import { presetIdFor, presetSummaries, reachableTools, rowWarnings } from '../src/subject.ts'
 import { toolSpecOf } from '../src/tool.ts'
@@ -65,6 +65,15 @@ const RESOLVE_DEPS = {
   vocabulary: CATALOG,
 }
 
+/** One file harness, in the shape every red line that mounts something can reuse. */
+const FILE_HARNESS = {
+  source: 'file',
+  originPath: '/a/b.yml',
+  fileName: 'harness.yml',
+  text: '- name: x\n',
+  digest: '00000000',
+} as const
+
 /** A configuration with both path fields blank, so `resolveConfig` has to compute them. */
 const BLANK_CONFIG = {
   outputRoot: '',
@@ -99,7 +108,7 @@ const SPEC = {
 
 /** One trial outcome, as a run summary carries it. Each test perturbs the fields it is about. */
 const OUTCOME = {
-  index: 1,
+  trial: 1,
   childId: 'child-1',
   stopReason: 'completed',
   wallMs: 1000,
@@ -550,6 +559,9 @@ describe('B13 — the vocabulary is one word per thing', () => {
       ['effective', /\beffective\b/],
       ['assembly (as a field)', /\bassembly\b/],
       ['TrialFacts', /\bTrialFacts\b/],
+      // Merged into `TrialOutcome`: it was the same eight fields with `stopReason` widened to `string`,
+      // plus two pass-through mappers. A second name for one shape is the drift this list exists for.
+      ['TrialSummary', /\bTrialSummary\b/],
     ] as const
     for (const [file, text] of sources()) {
       const code = stripComments(text)
@@ -587,17 +599,91 @@ describe('B13 — the vocabulary is one word per thing', () => {
   })
 })
 
+describe('B31 — one helper, one home', () => {
+  /**
+   * The rule: a helper that exists in four modules is four definitions of one thing, and they drift.
+   * Measured before this line existed: `describe(error)` was copied verbatim into `attachments`,
+   * `run`, `harness-run` and `harness-inspect`, and `firstLine` into `jobs` and `harness-inspect`. Each
+   * copy was correct; the cost is that a later fix to one of them is invisible in the other three.
+   *
+   * Scope is deliberate: **non-exported** declarations only. `apply`, `name`, `inject` and `Config` are
+   * host contracts that three plugin modules each implement on purpose, and a shared helper is by
+   * definition exported from its one home.
+   */
+  /**
+   * The names the host calls by convention. Every plugin module implements its own `apply`, and that is
+   * the host's contract rather than a duplicated helper, so it is excluded by name — not by visibility.
+   */
+  const HOST_CONTRACT = new Set(['apply'])
+
+  it('declares no function twice', () => {
+    // Exported or not: `text.ts` exporting `firstLine` and another module declaring a private one is
+    // still two definitions. An earlier version of this assertion only counted *non-exported*
+    // declarations, so the shared home never counted as a definition and no duplicate could ever pair
+    // up — caught by reverse control, which is the only way that kind of hole is visible.
+    const seen = new Map<string, string>()
+    const duplicates: string[] = []
+    for (const [file, text] of sources()) {
+      for (const match of stripComments(text).matchAll(
+        /^(?:export )?function ([A-Za-z_]\w*)\s*\(/gm,
+      )) {
+        const declared = match[1] ?? ''
+        if (HOST_CONTRACT.has(declared)) continue
+        const first = seen.get(declared)
+        if (first === undefined) seen.set(declared, file)
+        else duplicates.push(`"${declared}" in ${first} and ${file}`)
+      }
+    }
+    expect(duplicates, 'one helper, one home: move it to a module both callers import').toEqual([])
+  })
+
+  it('keeps the shared string helpers where every layer can import them', () => {
+    // The home matters as much as the count: `text.ts` sits below every consumer in the dependency
+    // graph, so nothing has to import upward to describe an error.
+    const text = sources().get('src/text.ts') ?? ''
+    expect(text).toContain('export function errorMessage(')
+    expect(text).toContain('export function firstLine(')
+    expect(text).toContain('export function contentBlocksOf(')
+    // ...and no caller keeps a private copy of either.
+    for (const [file, source] of sources()) {
+      if (file === 'src/text.ts') continue
+      expect(source.includes('function errorMessage('), `${file} re-implements errorMessage`).toBe(
+        false,
+      )
+      expect(source.includes('function firstLine('), `${file} re-implements firstLine`).toBe(false)
+    }
+  })
+})
+
 describe('B15 — a sealed harness is the whole tool set, not a delta', () => {
   it('puts the mask row before the harness rows', () => {
     // `tools.restrict` masks the scope it is called from, and a scope's own registrations are exempt.
     // Mounting the mask first is what keeps the harness's tools visible; reversed, the subject would
     // see nothing at all — a silent empty bench instead of an error.
-    for (const file of ['src/tools/harness-inspect.ts', 'src/run.ts']) {
-      const code = sources().get(file) ?? ''
-      const mask = code.indexOf('sealedRows(')
-      const harness = code.indexOf('harnessRows(')
-      expect(mask, `${file} never masks`).toBeGreaterThan(-1)
-      expect(mask < harness, `${file} mounts the harness before masking it`).toBe(true)
+    //
+    // This used to be asserted per call site, with two of them. The order is now decided once inside
+    // `mountRows`, so the assertion is behavioural: hand it a mask and a harness, read the order back.
+    // A source grep would also pass on two call sites that each wrote it the same wrong way round.
+    const rows = mountRows(FILE_HARNESS, { mountPath: '/a/b.yml', denied: ['read', 'write'] })
+    expect(rows[0]?.name).toBe('dsh-harness-dispatcher/sealed')
+    expect(rows[1]?.name).toBe('cordis:include')
+  })
+
+  it('mounts no mask row when nothing is denied, so an unsealed run is untouched', () => {
+    const rows = mountRows(FILE_HARNESS, { mountPath: '/a/b.yml', denied: [] })
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.name).toBe('cordis:include')
+  })
+
+  it('never lets a caller assemble the mask and the harness itself', () => {
+    // The failure this holds: two call sites building the pair by hand, and a later edit reversing one
+    // of them. The order is a property of the pair, so the pair may only be built in one place.
+    for (const [file, text] of sources()) {
+      if (file === 'src/harness.ts') continue
+      expect(
+        text.includes('sealedRows('),
+        `${file} assembles the mask and the harness by hand; call mountRows instead`,
+      ).toBe(false)
     }
   })
 
@@ -735,6 +821,41 @@ describe('B14 — documentation points at files and tools that exist', () => {
         `${file} still calls the model-input view \`assembly\``,
       ).toBe(false)
     }
+  })
+
+  it('names no record field the record no longer has', () => {
+    // Measured: `docs/ARCHITECTURE.md` still told a reader that an interrupted trial records
+    // `interrupted: true`, while AGENTS.md recorded that B30 had removed the field. A doc is the only
+    // place a retired field survives, and a reader who goes looking for one has no way to tell that the
+    // silence means "gone" rather than "not in this sample".
+    //
+    // Two precisions this line had to grow, both from its own false positives:
+    //
+    // - **field syntax only** (`name:`), not the bare word. `interrupted` is also a `turn/end` reason
+    //   kind emitted by the host, and a note discussing that mapping is not describing a record field.
+    // - **per line**, with an escape: the maintainer docs must be able to say "this field was removed",
+    //   which a blanket ban would also forbid. A line may name a retired field only when the same line
+    //   also says it is gone.
+    //
+    // `.agents/notes/` is excluded outright: those files are dated evidence of what was measured on the
+    // day, and rewriting them to satisfy a later rule would destroy the only record of the change.
+    const retired = ['interrupted:', 'turnEndReasons', 'unansweredCalls']
+    const saysRemoved = /已撤|撤掉|已经不在|removed|retired|no longer/i
+    const offenders: string[] = []
+    for (const [file, text] of documents()) {
+      if (file.startsWith('.agents/')) continue
+      for (const line of text.split('\n')) {
+        for (const field of retired) {
+          if (!line.includes(field)) continue
+          if (saysRemoved.test(line)) continue
+          offenders.push(`${file}: ${line.trim().slice(0, 100)}`)
+        }
+      }
+    }
+    expect(
+      offenders,
+      'a doc describes a record field that no longer exists; say that it was removed, or drop it',
+    ).toEqual([])
   })
 })
 
@@ -1446,8 +1567,8 @@ describe('B23 — a trial stopped by its own budget is stopped, not just labelle
       harnessPath: '/tmp/run-x/harness.json',
       trials: 2,
       outcomes: [
-        { ...OUTCOME, index: 1, stopReason: 'aborted', timedOut: true },
-        { ...OUTCOME, index: 2, stopReason: 'aborted', timedOut: true },
+        { ...OUTCOME, trial: 1, stopReason: 'aborted' as const, timedOut: true },
+        { ...OUTCOME, trial: 2, stopReason: 'aborted' as const, timedOut: true },
       ],
       stopped: false,
     }
@@ -1549,7 +1670,7 @@ describe('B28 — a stop stops everything', () => {
       recordPath: '/tmp/run-y/trials.jsonl',
       harnessPath: '/tmp/run-y/harness.json',
       trials: 4,
-      outcomes: [{ ...OUTCOME, index: 1 }],
+      outcomes: [{ ...OUTCOME, trial: 1 }],
       stopped: true,
     }
     const line = summaryLine(summary)
@@ -1740,5 +1861,22 @@ describe('B32 — the stimulus identity covers every switch that changes what th
     // Both values the fingerprint hashes are also fields, so the two cannot disagree.
     expect(record.maxDepth).toBe(sealed.maxDepth)
     expect(record.fingerprint).toBe(sealed.fingerprint)
+  })
+
+  it('reads `sealed` in one place, so the mask and its identity cannot diverge', () => {
+    // Two tools used to read `args.harness?.sealed` from the raw arguments independently, and the
+    // fingerprint was computed from a third reading that did not exist at all. One translation, one
+    // truth: `params.ts` copies it into the harness selection, and everything downstream reads the
+    // resolved value. `params.ts` is therefore the one file allowed to touch the raw argument.
+    for (const [file, text] of sources()) {
+      if (file === 'src/tools/params.ts') continue
+      expect(
+        /args\.harness\?\.sealed/.test(stripComments(text)),
+        `${file} reads \`sealed\` from raw arguments; read the resolved harness instead`,
+      ).toBe(false)
+    }
+    expect(stripComments(sources().get('src/tools/params.ts') ?? '')).toContain(
+      'sealed: args.harness.sealed',
+    )
   })
 })

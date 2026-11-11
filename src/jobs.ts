@@ -15,6 +15,8 @@
  * @module dsh-harness-dispatcher/jobs
  */
 
+import { errorMessage, firstLine } from './text.ts'
+
 /** How a job ended. Mirrors the host's `JobOutcome.status`. */
 export type JobStatus = 'completed' | 'killed' | 'failed'
 
@@ -95,11 +97,6 @@ export interface JobRegistry {
 export function jobOutcomeOf(stopped: boolean, error: unknown, result: string): JobOutcome {
   if (error === undefined) return { status: stopped ? 'killed' : 'completed', result }
   if (stopped) return { status: 'killed', result }
-  const detail = firstLine(error instanceof Error ? error.message : String(error))
+  const detail = firstLine(errorMessage(error))
   return detail === '' ? { status: 'failed', result } : { status: 'failed', detail, result }
-}
-
-/** The part of a message that belongs on a status line. */
-function firstLine(text: string): string {
-  return text.split('\n')[0] ?? ''
 }

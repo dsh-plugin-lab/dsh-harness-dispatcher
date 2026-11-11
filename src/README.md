@@ -8,7 +8,7 @@
 | 文件 | 导出 | 谁依赖 | 改后必跑 |
 |---|---|---|---|
 | [digest.ts](digest.ts) | `digestBytes` / `digestText` / `digestJson` | `harness`、`record`、`fold` | B4（记录里不许出现原文） |
-| [text.ts](text.ts) | `contentBlocksOf` | `trial` | **B4**（答案整段保存，不截断） |
+| [text.ts](text.ts) | `contentBlocksOf` / `errorMessage` / `firstLine` | `trial`、`run`、`jobs`、`attachments`、三个工具 | **B4**（答案整段保存，不截断）+ **B31**（一个 helper 一个 home） |
 | [attachments.ts](attachments.ts) | `resolvePrompt` / `planAttachment` / `imageDeliveryProblem` / `TaskAttachment` | `tools/harness-run`、`record` | **B27**（图片不可用必须拒；文件是路径句柄；记录只留身份）+ `attachments` 单测 |
 | [config.ts](config.ts) | `Config` / `ResolvedConfig` / `resolveConfig` | `index` | B9 + 真机（`harnessDir` 默认值决定能否挂载） |
 
@@ -31,7 +31,7 @@
 
 | 文件 | 导出 | 谁依赖 | 改后必跑 |
 |---|---|---|---|
-| [harness.ts](harness.ts) | `resolveHarness` / `harnessRows` / `sealedRows` / `mountPathFor` / `harnessLabel` / `HarnessSpecError` | 三个工具 | **B8 / B15 / B19** + `harness` 单测 |
+| [harness.ts](harness.ts) | `resolveHarness` / `harnessRows` / `sealedRows` / `mountRows` / `mountPathFor` / `sourcePathOf` / `harnessLabel` / `HarnessSpecError` | 三个工具 | **B8 / B15 / B19** + `harness` 单测 |
 | [sealed.ts](sealed.ts) | `apply` —— 一行 `tools.restrict`，遮掉继承来的工具 | `harness.ts` 的 `sealedRows` 生成它的行 | **B15 / B19**（只管工具；技能遮不住） |
 | [tool.ts](tool.ts) | `apply` + `toolSpecOf` —— 从行 config 长出一个模型可见工具 | 只在 harness 文件里按名字使用 | **B20** |
 | [shortcut.ts](shortcut.ts) | `normalizeShortcut` / `shortcutRows` / `shortcutLabel` | `harness` | `shortcut` 单测 |
@@ -40,15 +40,19 @@
 `harness.ts` 是全仓最危险的文件：它同时拥有「取字节 / 算摘要 / 生成挂载行 / 决定挂哪个路径」。
 `mountPathFor` 与 `harnessRows` 的分工是**真机纠正出来的**，别再合并回去。
 
+**行序也只有这一个 home**：`mountRows()` 把「遮罩行在前、harness 行在后」一次定死（红线 **B15**）。
+两个调用点（`run` 与 `harness-inspect`）都不许自己拼 `sealedRows + harnessRows` —— B15 有一条断言
+扫这件事，因为顺序写反的后果是受试体**一个工具都看不见**，而挂载照样成功。
+
 ## 执行与观测
 
 | 文件 | 导出 | 谁依赖 | 改后必跑 |
 |---|---|---|---|
-| [run.ts](run.ts) | `runBench` / `summaryLine` / `RunRequest` / `RunSummary` | `tools/harness-run`（两条等待都调它） | **B6 / B8 / B10 / B15**（执行体搬家后仍在这里）+ **B26**（唯一执行体）+ **B28**（一次停止停一切；`stopped` 只在后台读得到） |
-| [trial.ts](trial.ts) | `runTrial` / `stoppedByBudget` / `TrialPlan` / `TrialOutcome` | `run` | **B23 / B28**（融合信号里始终有调用方的信号）+ `fold` 单测 |
+| [run.ts](run.ts) | `runBench` / `summaryLine` / `RunRequest` / `RunSummary` | `tools/harness-run`（两条等待都调它） | **B6 / B8 / B10 / B15**（执行体搬家后仍在这里）+ **B26**（唯一执行体）+ **B28**（一次停止停一切；`stopped` 只在后台读得到）+ **B31**（逐 trial 的结果只有 `TrialOutcome` 一个类型，见 `trial.ts`） |
+| [trial.ts](trial.ts) | `runTrial` / `stoppedByBudget` / `TrialPlan` / `TrialOutcome` | `run` | **B23 / B28**（融合信号里始终有调用方的信号）+ **B31**（`TrialOutcome` 是逐 trial 结果的唯一类型；`trial` 字段名与记录、工具输出同一串）+ `fold` 单测 |
 | [abort.ts](abort.ts) | `onceAborted` | `trial` | `abort` 单测 |
 | [jobs.ts](jobs.ts) | `jobOutcomeOf` + `JobRegistry` 等结构类型 | `tools/harness-run` | **B26 / B28**（`killed` / `failed` 分清；没抛的喊停也是 `killed`；`detail` 只放一行） |
-| [collector.ts](collector.ts) | `FoldCollector` | `run` | `collector` 单测 |
+| [collector.ts](collector.ts) | `FoldCollector` | `run` | `collector` 单测（`arm()` 的 `recordEvents` 是**必填**：默认值只有工具那侧一个 home，见 **B31**） |
 | [fold.ts](fold.ts) | `foldEvent` / `finishFold` / `summarize` / `TrialObservations` | `collector`、`record` | **B4 / B7 / B30** + `fold` 单测 |
 | [host.ts](host.ts) | `HOST_KEYS` / `readHost` / `HostRead` / `HostSnapshot` | `tools/harness-run`、`trial`、`record` | **B30** + `host` 单测 |
 | [record.ts](record.ts) | `openRun` / `stimulusRecord` / `TrialRecord` / `EVENTS_FILE` | 三个工具 | **B5 / B6 / B30** + `record` 单测 |
@@ -97,10 +101,11 @@ frontmatter 的 `name` / `description` / `author` / `metadata.source`），apply
 | 你在改的东西 | 同批必须改 |
 |---|---|
 | 工具的名字 / 数量 / 参数 schema | 本文件 → [能力面](../docs/ARCHITECTURE.md#5-能力面) → 红线 B11/B14 |
-| 任务的附件（图 / 文件） | `attachments.ts` → [任务是输入，可以带附件](../docs/ARCHITECTURE.md#343-任务是输入可以带附件) → 红线 **B27** → `record.ts` 的 `TaskRecord.attachments` |
+| 任务附件（图 / 文件） | `attachments.ts` → [任务是输入，可以带附件](../docs/ARCHITECTURE.md#343-任务是输入可以带附件) → 红线 **B27** → `record.ts` 的 `TaskRecord.attachments` |
+| 任何小 helper（`errorMessage`、`firstLine` 这类） | 只加进 [text.ts](text.ts)；抄给第二个调用方会让红线 **B31** 红 |
 | harness 的形状（行列表 / 捷径标量 / 判据三层） | [Harness 的形状](../.agents/notes/2026-11-11-harness-shape.md) 是**判据** → `harness.ts`（捕获）→ `shortcut.ts`（糖）→ `record.ts` 的 `StimulusRecord` |
 | 挂载 / 审计 / 探针的顺序 | `subject.ts` → 红线 **B10** |
-| `sealed`（工具集封闭） | `sealed.ts` + `harness.ts` 的 `sealedRows` + `subject.ts` 的 `reachableTools` → 红线 **B15**（遮罩行必须在前）/ **B19**（不承诺遮技能）/ **B17**（封印点过名的工具连自造的也到不了 —— 探针必须减掉，否则它比实际多报） |
+| `sealed`（工具集封闭） | `sealed.ts` + `harness.ts` 的 `sealedRows` / **`mountRows`（行序的唯一 home）** + `subject.ts` 的 `reachableTools` → 红线 **B15**（遮罩行必须在前，且只在这一处排）/ **B19**（不承诺遮技能）/ **B17**（封印点过名的工具连自造的也到不了 —— 探针必须减掉，否则它比实际多报） |
 | `surface` 报什么（能到达 vs 存在） | `subject.ts` 的 `loadableSkills` → 红线 **B17** → `tools/harness-inspect` 的那行文案 |
 | `harness_inspect` 的四种用法（列 preset+provider / 列某路由的模型 / 查 preset / 查 harness） | `subject.ts` 的 `presetList`/`presetSummaries` → `params.ts` 的 `ModelRouter` → 红线 **B21**（两个发现入口必须分开：`listProviders()` 同步读注册表，`listModels()` 异步由适配器决定）→ `tools/harness-inspect` 的输出 schema 与四个渲染分支 |
 | skill 正文 | [../skills/dsh-harness-dispatcher/SKILL.md](../skills/dsh-harness-dispatcher/SKILL.md) → 红线 **B22**（上限 + 事实清单 + 缺文件/空正文要响亮）→ `check:release` 断言它随包发布 → 改完真机确认它仍在技能目录里 |

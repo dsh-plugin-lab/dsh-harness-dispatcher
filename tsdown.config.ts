@@ -30,7 +30,6 @@ export default [
         '@deepseek-ai/dsh-agent-preset-registry',
         '@deepseek-ai/dsh-home-paths',
         '@deepseek-ai/dsh-session',
-        '@deepseek-ai/dsh-session-projection',
         '@deepseek-ai/dsh-subagent',
         '@deepseek-ai/dsh-tools',
       ],

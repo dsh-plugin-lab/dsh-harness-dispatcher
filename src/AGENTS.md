@@ -66,6 +66,8 @@ index.ts ─→ tools/ ─→ run / harness / shortcut / subject / trial / recor
 | `stimulus` | 一轮 trial 的刺激（harness 身份 + 故障） | `setup` |
 
 **红线 B13 扫源码、B14 扫文档**，所以改名漏一处会红，不靠记性。
+**B31 扫"同名函数只能有一个 home"**，所以把一个小 helper 抄给第二个调用方会红 —— 抄写比汇报更容易发生，
+而四份逐字相同的副本没有任何一处会自己报错。
 
 ## 宿主 API 只能读不能改
 

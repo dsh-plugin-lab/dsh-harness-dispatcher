@@ -573,7 +573,7 @@ harness 文件所在目录，而 run 目录不在任何解析基准上，挂副�
 | 意图 | 谁在按 | 行为 |
 |---|---|---|
 | 这次实验不要了 | 主会话的停止 / `job_kill` | 在飞的 trial 取消并记 `aborted`，不再启动新的；已记录的保留 |
-| 这一个 trial 不要了，实验继续 | 子会话页面的中断 | 宿主 `interrupt` 取消那一轮；该 trial 记 `aborted` + `interrupted: true`，**下一个照常启动** |
+| 这一个 trial 不要了，实验继续 | 子会话页面的中断 | 宿主 `interrupt` 取消那一轮；该 trial 记 `aborted`（`timedOut: false`），**下一个照常启动** |
 | 预算到点 | `timeout_ms` | 同上，但记 `timedOut: true` |
 
 第二行是**真机验过**的（2026-11-11）：连续中断两个 trial，记录三条，run 自己跑完了 —— 也就是说"只想丢掉一个

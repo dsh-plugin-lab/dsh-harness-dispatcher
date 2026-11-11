@@ -23,6 +23,7 @@
 
 import { extname, basename } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { errorMessage } from './text.ts'
 
 /** What an attachment is, to the model and to the record. */
 export type AttachmentKind = 'image' | 'file'
@@ -243,7 +244,7 @@ async function save(
     } catch (error) {
       // The store verified the bytes and refused them; say which file, because the store names only
       // the code and the reader is holding a directory of images.
-      throw new Error(`cannot attach "${plan.path}": ${describe(error)}`, { cause: error })
+      throw new Error(`cannot attach "${plan.path}": ${errorMessage(error)}`, { cause: error })
     }
   }
 
@@ -251,16 +252,11 @@ async function save(
   try {
     return await store.saveFile({ data, name: plan.name })
   } catch (error) {
-    throw new Error(`cannot attach "${plan.path}": ${describe(error)}`, { cause: error })
+    throw new Error(`cannot attach "${plan.path}": ${errorMessage(error)}`, { cause: error })
   }
 }
 
 /** How many bytes one image read may pull: the smaller of the two deployment ceilings. */
 function imageCap(store: AttachmentStoreSeam): number {
   return Math.min(store.imageLimits.maxImageBytes, store.imageLimits.maxMessageImageBytes)
-}
-
-/** The message of an unknown thrown value. */
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

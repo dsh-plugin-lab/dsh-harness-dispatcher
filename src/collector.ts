@@ -55,12 +55,13 @@ export class FoldCollector {
    * Begin folding one subject Session.
    * @param sessionId - the subject's Session id.
    * @param recordEvents - also keep every committed event verbatim, for the caller that wants the
-   *   bottom layer rather than this repository's reading of it. Off by default: it is the only thing
-   *   here that stores message contents.
+   *   bottom layer rather than this repository's reading of it. Required rather than defaulted: the
+   *   tool's `record_events` defaults to on, and a second default here would be a second definition of
+   *   the same thing — the one shape of drift this repository exists to avoid.
    * @returns the disposer that stops folding and releases the accumulator. Reading afterwards yields
    *   `undefined`, so a leaked read cannot silently return another trial's numbers.
    */
-  arm(sessionId: string, recordEvents = false): () => void {
+  arm(sessionId: string, recordEvents: boolean): () => void {
     const entry: Armed = {
       state: emptyFold(),
       events: recordEvents ? [] : null,
@@ -99,10 +100,5 @@ export class FoldCollector {
    */
   sessionOf(sessionId: string): unknown {
     return this.armed.get(sessionId)?.session
-  }
-
-  /** How many subjects are currently armed. Reported so a leaked arm is visible rather than assumed away. */
-  get size(): number {
-    return this.armed.size
   }
 }

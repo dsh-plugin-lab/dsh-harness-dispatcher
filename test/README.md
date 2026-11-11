@@ -27,6 +27,9 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 | [catalog.test.ts](catalog.test.ts) | 目录键、默认集、描述生成 | [src/catalog.ts](../src/catalog.ts) |
 | [smoke.test.ts](smoke.test.ts) | 模块能 import、注册面存在 | [src/index.ts](../src/index.ts) |
 
+`text.ts` 的三个导出（`contentBlocksOf` / `errorMessage` / `firstLine`）由各自调用方的测试覆盖
+（`fold`、`attachments`、`jobs`、`record`），并有一条红线（**B31**）保证它们没有被抄第二份。
+
 ## 红线各管什么
 
 | 编号 | 判据 |
@@ -44,7 +47,7 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 | B11 | `harness_inspect` 能查已有 preset，且对不可用路由报警 |
 | B12 | skill 由代码注册，且内容写清一次实验能踩空的那些陷阱 |
 | B13 | 一个词管一件事（源码无 `quick` / `assembly` / `effect` 等旧词） |
-| B14 | 文档不指向已删文件、不提已退休的工具名 |
+| B14 | 文档不指向已删文件、不提已退休的工具名、不描述记录里已经撤掉的字段（`interrupted` 这类） |
 | B15 | 封起来的 harness 是完整工具集：遮罩行排在 harness 行之前 |
 | B16 | 源码 import 的包必须在清单里声明；peer 与 dev 范围相同；有运行时导入的包必须 external |
 | B17 | `surface` 报「受试体能到达的」，不是「注册表里有的」：无注册表 / 无可达 / 有名单三态可分；而且封印点过名的工具**连自造的也到不了**，探针要减掉 |
@@ -61,6 +64,7 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 | B28 | 一次停止停一切：在飞的 trial 取消、后面的不再启动；前台被停后调用方看不到返回值（管线覆盖），别承诺部分摘要 |
 | B29 | 没有东西绑死在一台机器上：宿主家走 `dshHomePath()`，仓里不出现任何人的用户目录；两个 README 互相可切换 |
 | B30 | 宿主算过的就抄、不重算：`trace` 只剩投影给不出的三个计数；原始事件默认落盘，记录才可被另一口径重算 |
+| B31 | 一个 helper 只有一个 home：源码里不许有两个同名函数定义（`apply` 是宿主契约，按名字豁免） |
 
 ## 已知盲区（**不是遗漏，是边界**）
 
@@ -75,4 +79,9 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 文本；附件参数 schema 要用宿主自己的编译器验）、B28（被喊停的 run 抛异常会把记录包成"失败"）。
 B30 也是真机来的，但是另一类：**不是坏了，是两个数都对却叫同一个名字** —— 本仓的 `turns` 数与
 `sessionStats.turns` 定义不同，同一条记录和同一个会话由此可以互相矛盾。
+
+**B31 与 B14 的字段那条不是真机来的，是"扫一遍源码"来的**，它们挡的是另一类腐蚀：不是行为错了，
+是同一件事被抄了四份、同一条旧事实留在了文档里，而**没有任何一处会自己报错**。这类断言的反向控制
+尤其重要——第一版 B31 只统计**非导出**声明，于是 `text.ts` 里那个导出反而不会被当成一条定义，
+重复永远配不上对；是反向控制把那个洞逼出来的。
 真机步骤见 [../docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) 的「真机验证」节。

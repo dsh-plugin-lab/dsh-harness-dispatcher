@@ -1,5 +1,11 @@
 /**
- * Flatten the subject's final answer into one string.
+ * The small string conversions every layer needs, in one place.
+ *
+ * Two jobs that look unrelated and are not: flattening a message body into prose, and turning a thrown
+ * value or a multi-line diagnostic into the one line a reader or a status field can hold. Both are
+ * "value in, string out", both are reached from four or five modules, and both were copied once per
+ * caller before this module held them.
+ *
  * @module dsh-harness-dispatcher/text
  */
 
@@ -42,4 +48,29 @@ export function contentBlocksOf(blocks: readonly ContentBlock[] | undefined): st
     }
   }
   return text
+}
+
+/**
+ * The message of an unknown thrown value, without losing a non-Error.
+ *
+ * Every `catch` in this repository receives `unknown`, and every one of them that reports anything has
+ * to say what happened. Four modules had their own copy of this before it lived here.
+ * @param error - anything thrown.
+ * @returns the message, or the value stringified when it is not an `Error`.
+ */
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * The part of a message that belongs on a status line.
+ *
+ * A job's `detail` and a preset listing both show one line, and a host diagnostic can run to twenty:
+ * without this, a whole paragraph lands inside `[status: killed, …]` or replaces the row count a reader
+ * was comparing. The full text travels in a field meant to be read, never in a label.
+ * @param text - the message.
+ * @returns its first line.
+ */
+export function firstLine(text: string): string {
+  return text.split('\n')[0] ?? text
 }

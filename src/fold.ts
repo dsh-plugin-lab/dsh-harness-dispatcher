@@ -130,7 +130,6 @@ export function emptyFold(): FoldState {
   }
 }
 
-/** Truncate without leaving a dangling high surrogate at the cut. */
 /** Concatenate the text blocks of a message body. */
 function textOf(blocks: unknown): string {
   if (!Array.isArray(blocks)) return ''
@@ -143,7 +142,6 @@ function textOf(blocks: unknown): string {
   return text
 }
 
-/** Read a numeric field defensively; absent or non-numeric reads as zero. */
 /** Read a string field defensively. */
 function str(value: unknown): string | null {
   return typeof value === 'string' ? value : null

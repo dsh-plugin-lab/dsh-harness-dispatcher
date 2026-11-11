@@ -20,8 +20,5 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "test"],
-  // The host half and its tests: no DOM, no JSX. The browser half is checked by
-  // tsconfig.client.json, which adds the DOM library and the JSX transform.
-  "exclude": ["src/client"]
+  "include": ["src", "test"]
 }

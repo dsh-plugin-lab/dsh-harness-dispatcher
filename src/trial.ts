@@ -25,7 +25,7 @@ import type { Fault } from './fault.ts'
 import type { FaultGate } from './gate.ts'
 import type { HostRead } from './host.ts'
 import type { RunHandle, StimulusRecord, TrialRecord, TrialStopReason } from './record.ts'
-import { contentBlocksOf } from './text.ts'
+import { contentBlocksOf, errorMessage } from './text.ts'
 
 /** Everything one trial needs beyond its index. */
 export interface TrialPlan {
@@ -46,7 +46,8 @@ export interface TrialPlan {
 
 /** What one trial produced, for the tool's return value. */
 export interface TrialOutcome {
-  readonly index: number
+  /** 1-based trial index, under the same name the record and the tool's output use. */
+  readonly trial: number
   readonly childId: string
   readonly stopReason: TrialStopReason
   readonly wallMs: number
@@ -68,6 +69,15 @@ export interface TrialDeps {
    * that cannot read them records why; it never invents zeros.
    */
   readonly readHost: (session: unknown) => HostRead
+  /**
+   * Report a cleanup that failed where nothing else would notice.
+   *
+   * The two `dispose()` calls below must not mask the error that got us here, so they cannot throw; but
+   * a leaked activation keeps a whole Session alive, and swallowing that silently is how a leak becomes
+   * invisible. Every other cleanup in this repository warns through the logger; this one had no channel
+   * to do it through.
+   */
+  readonly warn: (message: string) => void
 }
 
 /**
@@ -144,7 +154,9 @@ export async function runTrial(
   // claiming a stop that never happened. Stopping is ours to do, and `dispose()` is what stops a
   // running child: it cancels the turn, waits for idle, then settles `result` as `aborted`.
   const detachStop = onceAborted(trialSignal, () => {
-    void activation.dispose().catch(() => undefined)
+    void activation.dispose().catch((error: unknown) => {
+      deps.warn(`harness_run: stopping the subject failed: ${errorMessage(error)}`)
+    })
   })
   try {
     const result = await activation.result
@@ -182,7 +194,7 @@ export async function runTrial(
     await run.append(record)
     await run.appendEvents(index, events)
     return {
-      index,
+      trial: index,
       childId,
       stopReason: record.stopReason,
       wallMs: record.wallMs,
@@ -197,6 +209,8 @@ export async function runTrial(
     disarmGate()
     disarmFold()
     // Dispose inside the trial's own finally: a throwing `result` must not leak the activation.
-    await activation.dispose().catch(() => undefined)
+    await activation.dispose().catch((error: unknown) => {
+      deps.warn(`harness_run: releasing the subject failed: ${errorMessage(error)}`)
+    })
   }
 }

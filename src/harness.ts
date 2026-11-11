@@ -342,6 +342,40 @@ export function mountPathFor(captured: CapturedHarness, runCopyPath: string): st
   return captured.source === 'file' ? captured.originPath : runCopyPath
 }
 
+/**
+ * Where an inspection mounts a harness from, when it has no run copy to fall back on.
+ *
+ * An inspection mounts the operator's file, so that a later edit is what gets inspected. A shortcut has
+ * no file at all: its rows are already materialised, and the include row — the only row that ever
+ * carries a path — does not exist for it. The empty string is that absence, and it belongs here rather
+ * than at the call site, so no caller has to know a shortcut ignores the path.
+ * @param captured - the captured harness.
+ * @returns an absolute path, or `''` for the shortcut.
+ */
+export function sourcePathOf(captured: CapturedHarness): string {
+  return captured.source === 'file' ? captured.originPath : ''
+}
+
+/**
+ * Rows in mount order: the mask first, then the harness.
+ *
+ * The order is semantics, not tidiness. `tools.restrict` masks the scope it is called from while that
+ * scope's own registrations are exempt, so a mask mounted *after* the harness hides the harness too and
+ * the subject sees nothing at all — a silent empty bench rather than an error. Two call sites building
+ * this list by hand would be two chances to write it the wrong way round, so the order has one home
+ * here (redline B15).
+ * @param captured - the harness under test.
+ * @param options.mountPath - where the harness is readable at when it mounts.
+ * @param options.denied - tool names to hide; empty mounts no mask row at all.
+ * @returns rows in load order, mask first.
+ */
+export function mountRows(
+  captured: CapturedHarness,
+  options: { readonly mountPath: string; readonly denied: readonly string[] },
+): readonly HarnessRow[] {
+  return [...sealedRows(options.denied), ...harnessRows(captured, options.mountPath)]
+}
+
 /** A `file:` URL the host's include plugin accepts. See the note on {@link harnessRows}. */
 function fileURLOf(absolutePath: string): string {
   return pathToFileURL(absolutePath).href

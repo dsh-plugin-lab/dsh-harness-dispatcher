@@ -39,11 +39,12 @@ import type { Fault } from './fault.ts'
 import type { FaultGate } from './gate.ts'
 import type { HostRead } from './host.ts'
 import type { ResolvedHarness } from './harness.ts'
-import { harnessLabel, harnessRows, mountPathFor, sealedRows } from './harness.ts'
+import { harnessLabel, mountPathFor, mountRows } from './harness.ts'
 import { openRun, stimulusRecord } from './record.ts'
 import type { RunHandle } from './record.ts'
 import { hostToolNames, mountSubject, presetIdFor } from './subject.ts'
 import type { Subject } from './subject.ts'
+import { errorMessage } from './text.ts'
 import { runTrial } from './trial.ts'
 import type { TrialOutcome } from './trial.ts'
 
@@ -53,7 +54,6 @@ export interface RunRequest {
   readonly runId: string
   readonly harness: ResolvedHarness
   readonly faults: readonly Fault[]
-  readonly sealed: boolean
   readonly taskId: string
   /**
    * The task as the child receives it: text, blocks, and the attachment identity the record keeps.
@@ -76,18 +76,6 @@ export interface RunRequest {
   readonly recordEvents: boolean
 }
 
-/** One trial, as the caller sees it. */
-export interface TrialSummary {
-  readonly index: number
-  readonly childId: string
-  readonly stopReason: string
-  readonly wallMs: number
-  readonly toolCalls: number
-  readonly toolErrors: number
-  readonly observationsAvailable: boolean
-  readonly timedOut: boolean
-}
-
 /** What a finished run amounts to. The same value reaches a caller and a job's `result`. */
 export interface RunSummary {
   readonly runId: string
@@ -96,7 +84,7 @@ export interface RunSummary {
   readonly recordPath: string
   readonly harnessPath: string
   readonly trials: number
-  readonly outcomes: readonly TrialSummary[]
+  readonly outcomes: readonly TrialOutcome[]
   /**
    * Whether the caller asked to stop before every requested trial had run.
    *
@@ -119,13 +107,15 @@ export interface RunDeps {
   readonly collector: FoldCollector
   /** Read the host's own projection values for a subject Session; see {@link TrialDeps.readHost}. */
   readonly readHost: (session: unknown) => HostRead
+  /** Report a cleanup that failed where nothing else would notice; see {@link TrialDeps.warn}. */
+  readonly warn: (message: string) => void
   readonly outputRoot: string
 }
 
 /** Per-trial reporting, for whoever is watching a run that outlives its call. */
 export interface RunObserver {
   /** One finished trial, plus how many have landed. Never throws: a watcher must not break a run. */
-  onTrial?(outcome: TrialSummary, recorded: number): void
+  onTrial?(outcome: TrialOutcome, recorded: number): void
 }
 
 /**
@@ -190,17 +180,17 @@ export async function runBench(
   )
 
   let subject: Subject | undefined
-  const outcomes: TrialSummary[] = []
+  const outcomes: TrialOutcome[] = []
   let stopped = false
   try {
-    const denied = request.sealed ? hostToolNames(ctx) : []
+    const denied = request.harness.sealed ? hostToolNames(ctx) : []
     subject = await mountSubject(ctx, {
       presetId,
       label: harnessLabel(harness.captured),
-      rows: [
-        ...sealedRows(denied),
-        ...harnessRows(harness.captured, mountPathFor(harness.captured, run.harnessPath)),
-      ],
+      rows: mountRows(harness.captured, {
+        mountPath: mountPathFor(harness.captured, run.harnessPath),
+        denied,
+      }),
       ...(denied.length === 0 ? {} : { denied }),
     })
     // Only a harness that can actually receive them may claim them in its record.
@@ -231,8 +221,9 @@ export async function runBench(
         stopped = true
         break
       }
-      outcomes.push(summarize(await runTrial(deps, plan, parent, stop, run, index)))
-      observer?.onTrial?.(outcomes[outcomes.length - 1] as TrialSummary, outcomes.length)
+      const outcome = await runTrial(deps, plan, parent, stop, run, index)
+      outcomes.push(outcome)
+      observer?.onTrial?.(outcome, outcomes.length)
     }
 
     return {
@@ -250,7 +241,7 @@ export async function runBench(
     // work" and "the first 3 of 10 are on disk".
     if (outcomes.length > 0) {
       throw new Error(
-        `${describe(error)}\n${String(outcomes.length)}/${String(request.trials)} trial(s) were already ` +
+        `${errorMessage(error)}\n${String(outcomes.length)}/${String(request.trials)} trial(s) were already ` +
           `recorded and are readable at ${run.recordPath} — the directory is kept, it is data.`,
         { cause: error },
       )
@@ -283,23 +274,4 @@ async function release(
   // loop": a stop that lands during the mount used to leave an empty directory behind, because the two
   // readings of "started" differ by exactly one trial.
   if (!recorded) await run.discard().catch(() => undefined)
-}
-
-/** The part of a trial outcome the caller sees. */
-function summarize(outcome: TrialOutcome): TrialSummary {
-  return {
-    index: outcome.index,
-    childId: outcome.childId,
-    stopReason: outcome.stopReason,
-    wallMs: outcome.wallMs,
-    toolCalls: outcome.toolCalls,
-    toolErrors: outcome.toolErrors,
-    observationsAvailable: outcome.observationsAvailable,
-    timedOut: outcome.timedOut,
-  }
-}
-
-/** The message of an unknown thrown value, without losing a non-Error. */
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

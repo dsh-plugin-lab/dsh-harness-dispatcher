@@ -94,11 +94,6 @@ export class FaultGate {
     }
   }
 
-  /** How many subjects are currently armed. Reported by the tool so a leaked arm is visible. */
-  get size(): number {
-    return this.armed.size
-  }
-
   private faultFor(
     sessionId: string | undefined,
     tool: string,

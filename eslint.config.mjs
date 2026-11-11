@@ -18,13 +18,6 @@ export default [
     },
   },
   {
-    // The browser half; see tsconfig.client.json.
-    files: ['src/client/**/*.{ts,tsx}'],
-    languageOptions: {
-      globals: { ...globals.browser },
-    },
-  },
-  {
     rules: {
       // A leading `_` marks a binding that is deliberately unused (a callback placeholder, or a key
       // dropped by destructuring).

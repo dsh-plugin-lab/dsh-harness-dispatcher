@@ -26,7 +26,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { normalizeFaults, assertFaultsReachable } from '../fault.ts'
 import type { ResolveDeps } from '../harness.ts'
-import { harnessLabel, harnessRows, resolveHarness, sealedRows } from '../harness.ts'
+import { harnessLabel, mountRows, resolveHarness, sourcePathOf } from '../harness.ts'
 import {
   SKILL_TOOL,
   hostToolNames,
@@ -37,6 +37,7 @@ import {
   surfaceOf,
 } from '../subject.ts'
 import type { CapabilitySurface, PresetSummary } from '../subject.ts'
+import { errorMessage, firstLine } from '../text.ts'
 import {
   FAULTS_PARAMETER,
   OPTIONAL_HARNESS,
@@ -376,7 +377,7 @@ async function modelsOf(
       ok: false,
       target,
       problems: [
-        `cannot list the models of "${provider}": ${describe(error)}. A route is listed only while its ` +
+        `cannot list the models of "${provider}": ${errorMessage(error)}. A route is listed only while its ` +
           'adapter is registered; the bare listing names the ones that answer that way.',
       ],
       warnings: [],
@@ -426,11 +427,6 @@ function presetLines(presets: readonly PresetSummary[]): string {
     `${String(presets.length)} preset(s) on this host. Inspect one with { preset: "<id>" }.`,
     ...lines,
   ].join('\n')
-}
-
-/** The first line of a multi-line host diagnostic, which is the part that names the cause. */
-function firstLine(text: string): string {
-  return text.split('\n')[0] ?? text
 }
 
 /**
@@ -487,11 +483,6 @@ export function modelLines(
   ].join('\n')
 }
 
-/** The message of an unknown thrown value, without losing a non-Error. */
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 /** What one inspection found, before problems are assembled. */
 interface InspectionFacts {
   readonly surface: CapabilitySurface
@@ -537,16 +528,11 @@ async function inspect(
   }
 
   const resolved = await resolveHarness(harnessInputOf(args), deps)
-  // An inspection has no run directory, so it mounts the source itself: the file the operator will
-  // edit, or the compiled rows of the shortcut.
-  const mountPath = resolved.captured.source === 'file' ? resolved.captured.originPath : ''
-  const denied = args.harness?.sealed === true ? hostToolNames(ctx) : []
+  const denied = resolved.sealed ? hostToolNames(ctx) : []
   const subject = await mountSubject(ctx, {
     presetId: presetIdFor(deps.nextId()),
     label: harnessLabel(resolved.captured),
-    // The mask goes first: a scope's own registrations are exempt, so mounting the harness after it
-    // keeps the harness's tools and hides only the inherited ones.
-    rows: [...sealedRows(denied), ...harnessRows(resolved.captured, mountPath)],
+    rows: mountRows(resolved.captured, { mountPath: sourcePathOf(resolved.captured), denied }),
     ...(denied.length === 0 ? {} : { denied }),
   })
   try {

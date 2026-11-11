@@ -33,7 +33,9 @@ import { jobOutcomeOf } from '../jobs.ts'
 import type { JobRegistry } from '../jobs.ts'
 import { runDirectoryFor } from '../record.ts'
 import { runBench, summaryLine } from '../run.ts'
-import type { RunDeps, RunRequest, TrialSummary } from '../run.ts'
+import type { RunDeps, RunRequest } from '../run.ts'
+import { errorMessage } from '../text.ts'
+import type { TrialOutcome } from '../trial.ts'
 import {
   ATTACHMENTS_PARAMETER,
   FAULTS_PARAMETER,
@@ -235,7 +237,6 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
           runId: `run-${new Date().toISOString().replaceAll(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`,
           harness,
           faults,
-          sealed: args.harness?.sealed === true,
           taskId: args.task_id,
           prompt,
           cwd: args.cwd ?? null,
@@ -251,6 +252,7 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
           collector: deps.collector,
           // Bound here because the tool layer is the only place that may know a host service's shape.
           readHost: (session: unknown) => readHost(ctx, session),
+          warn: (message: string) => ctx.logger.warn(message),
           outputRoot: deps.limits.outputRoot,
         }
 
@@ -280,34 +282,11 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
           recorded: summary.outcomes.length,
           completed,
           ...(summary.stopped ? { stopped: true } : {}),
-          outcomes: summary.outcomes.map(outcomeOf),
+          outcomes: [...summary.outcomes],
         }
       },
     }),
   )
-}
-
-/** The tool's flat per-trial shape. */
-function outcomeOf(outcome: TrialSummary): {
-  trial: number
-  childId: string
-  stopReason: string
-  wallMs: number
-  toolCalls: number
-  toolErrors: number
-  observationsAvailable: boolean
-  timedOut: boolean
-} {
-  return {
-    trial: outcome.index,
-    childId: outcome.childId,
-    stopReason: outcome.stopReason,
-    wallMs: outcome.wallMs,
-    toolCalls: outcome.toolCalls,
-    toolErrors: outcome.toolErrors,
-    observationsAvailable: outcome.observationsAvailable,
-    timedOut: outcome.timedOut,
-  }
 }
 
 /**
@@ -382,7 +361,7 @@ function startBackground(
         } catch (error) {
           // The run's error already says how many trials landed and where they are, so the result can
           // be the message itself rather than a second, slightly different summary.
-          return jobOutcomeOf(stopped, error, describe(error))
+          return jobOutcomeOf(stopped, error, errorMessage(error))
         }
       })()
       return {
@@ -406,7 +385,7 @@ function startBackground(
 }
 
 /** One line of per-trial progress, as `job_output` shows it. */
-function trialLine(outcome: TrialSummary, total: number): string {
+function trialLine(outcome: TrialOutcome, total: number): string {
   const flags = [
     outcome.stopReason,
     `${String(outcome.toolCalls)} call(s)`,
@@ -414,7 +393,7 @@ function trialLine(outcome: TrialSummary, total: number): string {
     `${String(outcome.wallMs)}ms`,
     ...(outcome.timedOut ? ['timed out'] : []),
   ]
-  return `trial ${String(outcome.index)}/${String(total)}: ${flags.join(', ')}`
+  return `trial ${String(outcome.trial)}/${String(total)}: ${flags.join(', ')}`
 }
 
 /**
@@ -495,7 +474,7 @@ async function assertImagesDeliverable(
     // and "the image is why my route suddenly has to be right".
     throw new Error(
       `cannot attach an image: route ${provider}/${model} could not be resolved — ` +
-        `${describe(error)}. Pass an image-capable \`provider\`/\`model\`, or drop the image.`,
+        `${errorMessage(error)}. Pass an image-capable \`provider\`/\`model\`, or drop the image.`,
       { cause: error },
     )
   }
@@ -506,9 +485,4 @@ async function assertImagesDeliverable(
     info.inputModalities?.includes('image'),
   )
   if (problem !== undefined) throw new Error(problem)
-}
-
-/** The message of an unknown thrown value, without losing a non-Error. */
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
