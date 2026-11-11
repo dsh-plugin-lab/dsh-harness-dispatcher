@@ -428,8 +428,85 @@ ctx（宿主）**，不是调用方 —— 条目落进全局层，与被遮对�
 **第二次尝试为什么也没成，值得单独记：** 想拿到 scope 绑定的注册表，就得把 `skills` 写进那一行的
 `inject`（`ctx.get('skills')` 拿到的是宿主那份实例）。加上之后**那一行在 preset 里变成 PENDING**。
 判据是探针：在 `apply` 首行无条件 `throw`，结果**挂载照样成功、工具一个不少** —— 说明 `apply` 压根
-没执行。而 PENDING 既不在 `broken` 里也不在 `rowProblems` 里，所以「没生效」看起来和「生效了但没用」
+没执行。而 PENDING 既不在 `broken` 里也不在 `rowProblems` 里，所以「没生效」与「生效了但没用」
 一模一样。这类失败只能靠「故意让它抛」抓。
+
+### 7.6 边界逐项实测（2026-11-11 第二批，同一宿主）
+
+一轮任务固定为「读一个只有三个字的文件」或「回两个字符」，每次只变一个参数。**每条都有可对照的另一侧**，
+因为没有对照的「看起来通了」正是 §7.3 那个教训。
+
+| 项 | 怎么判的 | 结果 |
+|---|---|---|
+| 多 trial | 3 trial、同一 harness | 3 行、3 个不同 `childId`、每行独立 |
+| `deny` | 同一题，遮 `read` | 2 次调用 2 次失败，受试体报的正是注入的原文，**始终拿不到内容** |
+| `latency` | 加 4s 延迟到 `read` | 该题基线 3.0–4.1s → 7.1s，工具**成功**（`errors: 0`） |
+| 同上，反向控制 | 4s 延迟改加到**受试体没调用的** `write` | 回落到 2.9s —— 那 4s 确实来自故障本身 |
+| persona 四档 | 同题比 `modelInput.systemPrompt` | 4 个不同 digest / 4 个不同指纹；字符数只差 13–63 |
+| 并发 | 同一条消息里两次 `harness_run` | 被**串行化**：后者的第一个 trial 在前者最后一个 trial 结束后才开始 |
+| `maxDepth: 2` | harness 行 `tool-subagent` 写 `maxDepth: 2` | 孙会话真的起来了，受试体拿到 `42` |
+| 同上，反向控制 | 同一个 harness 行**不写** `maxDepth` | 受试体拒绝调用，理由是宿主注入的那句「current 1, maximum 0」 |
+| 故障点名不可达工具 | `faults: [{tool: 'web_search'}]` 对只有 fs 的 harness | 被拒，且列出**实际可调**的四个工具名 |
+| 未达 trial 1 的 run | 上面那次失败之后 | **目录不存在** —— `discard()` 真机确认 |
+| 超时 | `timeout_ms: 700` 配一个会长篇大论的题 | **缺陷**，见 §7.7 |
+
+两个变体人设的字符差只有 13–63，因为 **persona 行是替换不是追加**：它用
+`PERSONA_PREFIX_SECTION` 这个名字注册（见 `dsh-persona/lib/index.js`），在 preset 作用域里把部署人设
+那条 section 盖掉。所以「加一段 verbose 人设」的实际效果是**换掉**默认人设，系统提示不会长出一大截。
+判「人设生效没有」只能比 `modelInput.systemPrompt.digest`，比长度会得出相反结论。
+
+`maxDepth` 也一样容易误判：它**不是**「给受试体几层预算」，而是 `resolveChildDepth` 里的**绝对上限**
+（子深度 = 父深度 + 1，超过即抛 `SubagentDepthError`）。真正起作用的那个值是**工具行自己 `config.maxDepth`**；
+不写就回落到宿主服务的 `maxDepth`，而本机 profile 把它配成了 `0` —— 于是「`max_depth: 2` 应该能派活」
+在行里不写 `maxDepth` 的情况下**一次都派不出去**，而且看起来像模型不肯配合。
+
+### 7.7 第四个真机缺陷：超时只标记，不停止
+
+同一道题、`timeout_ms: 700`：记录写着 `timedOut: true`、`stopReason: "completed"`、`wallMs: 15504`。
+
+原因不在我们这一侧漏了 `throwIfAborted`，而在 API 的形状：`startActivation({ signal })` 的 `signal`
+**只覆盖受理之前**的工作（`dsh-subagent` 的文档原话是 *caller cancellation stops only pre-acceptance
+work*），受理之后子会话与该信号再无关系。于是 abort 一个信号产生不了任何效果，`activation.result`
+照常等到那一轮自己结束。
+
+能停的只有 `activation.dispose()`：`finishDisposal(activation, true)` 会
+`agent.cancel({ kind: 'parent' })`、等 `whenIdle()`、再 `captureLocalResult` ——
+而 `epochStopReason` 把 `aborted` / `interrupted` 的 `turn/end` 映射成 `stopReason: "aborted"`。
+
+修法是 [src/trial.ts](../../src/trial.ts) 在融合信号上挂一个「取消并 dispose」的监听（逻辑抽成
+[src/abort.ts](../../src/abort.ts) 里的 `onceAborted`，它的两个边界——已 abort、已 detach——有单测），
+并把 `timedOut` 收紧成「结果真的是 `aborted`」。修后同题实测：700ms → **733ms、`aborted`**、
+3s 预算 → 3025ms 且**工具调用留在 trace 里**（`calls: 1, errors: 1`）。
+
+**顺带暴露的第二个瑕疵**：工具返回的是「**0/1** trials recorded」，而盘上有一行 —— 那句文案把
+`completed` 当成了 `recorded`，于是「被停掉的 trial」读起来像「没有 trial」。改成两个数分开报。
+
+两次缺陷都进红线 **B23**，并且各做了反向控制（把修法撤掉 → 红 → 复原）。
+
+### 7.8 第五个：技能在目录里，但加载不了
+
+同一天顺手用 `skill` 工具读了本插件自己的说明，报错：
+
+```
+loaded skill "dsh-harness-bench" source must be a string
+```
+
+目录里能看到它（`harness_inspect` 报 `1 skill`），`skill` 工具一调就失败 —— 一个**只在加载时**才出现的
+契约缺口。原因是注册表校验两次、两次不同：
+
+| 时机 | 用哪个校验 | 要求 |
+|---|---|---|
+| `skills.register(...)` | `validateRuntimeSkill` | 只查 `name` / `description` 形状 |
+| `skill` 工具取正文 → `skills.get(name)` | `validateDefinition` | `source`、`provider`、`content` **都必须是字符串** |
+
+`register()` 会替调用方补 `provider: "runtime"`，**但不会补 `source`**。我们只传了
+`{name, description, content}`，于是条目进了目录、正文永远取不出来。补一个 `source: "runtime"`
+（与注册表给这类条目用的 provider 名一致）即可。
+
+为什么单测没抓到：既有的断言只检查「有没有用 `ctx.effect` 包住注册」「失败会不会连累工具」，
+**没有一条真的走一遍加载路径**。所以红线 **B24** 不再扫源码，而是拿一个假注册表把
+`registerSkill()` 跑一遍，断言它交出去的对象带 `source` 字符串、正文逐字不变 —— 这条断言在旧实现上
+立刻红（`expected 'undefined' to be 'string'`）。
 
 ---
 

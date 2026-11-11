@@ -874,6 +874,9 @@ describe('B22 — the skill is one page, and it says everything once', () => {
       /dsh-harness-dispatcher\/tool/, // a tool can be defined or replaced in the file
       /byte-identical/, // the task is the controlled variable
       /credentials/,
+      /replaces/, // persona is a swap, not an addition — length says nothing
+      /maxDepth/, // delegation is gated by the row, not by the request-level max_depth
+      /timeout_ms/, // a budget-stopped trial is an observation, not a harness failure
     ]) {
       expect(body, `the skill no longer states ${String(fact)}`).toMatch(fact)
     }

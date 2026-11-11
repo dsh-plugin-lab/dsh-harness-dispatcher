@@ -84,13 +84,17 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 - **加载期、`cordis:include`、`sealed` 已真机确认**（2026-11-11），并纠正两个 Windows 缺陷
   （`file:` URL、不挂副本）。封起来的极简 harness 只有 4 个工具，同一任务用 `read` 单打独斗
   134 次调用才得到答案 —— 见 [真机状态](.agents/notes/2026-11-11-harness-shape.md#7-真机状态2026-11-11宿主-022-rc1)。
-- **边界只在单测里**：`deny` / `latency`、persona 其余三档、多 trial、并发、`maxDepth > 1`、
-  后台通道 —— 都没有真机跑过。清单见
-  [首次真机验证的「还没验的」](.agents/notes/2026-11-10-first-real-machine-run.md#四还没验的)。
+- **边界也逐个真机跑过**（2026-11-11 第二批）：`deny` / `latency`（含「延迟加在没被调用的工具上
+  会回到基线」的反向控制）、persona 四个变体、多 trial、两次重叠调用被串行化、`maxDepth: 2` 真的
+  出现孙会话、故障点名不可达工具被拒、未达 trial 的 run 目录被删掉、超时真的停住了受试体。
+  同一批里抓到并修掉两个缺陷：超时只标记不停止（红线 **B23**）、注册的技能能列出却**加载不了**
+  （缺 `source`，红线 **B24**）。
+- **没验的**：后台（`ctx.jobs`）通道 —— **它还没实现**，不是没跑。
 
 ## 待办
 
-- [ ] 真机验 `deny` / `latency` 两模式、persona 其余三档、多 trial、并发、`maxDepth > 1`、后台通道。
+- [ ] 后台通道（`ctx.jobs.start`）：长跑需要它，见
+  [能力面 §5.1](docs/ARCHITECTURE.md#51-后台通道为什么是第二步)。
 - [ ] `prompt` 仍是纯文本，没做成 `ContentBlock[]`（图 / 文件）。**已知缺口，不是已完成。**
 
 ## 活跃坑
@@ -105,6 +109,10 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 | 拿「注册表里有什么」当「受试体能调什么」 | 探针**回答的不是它名字承诺的问题**，读记录的人反着推断 | 探针只报能到达的，红线 **B17** |
 | 以为同名条目能盖掉继承来的技能 | 实测三次都**盖不掉**（落全局层、先到者赢）；再这么写就是假封闭 | `sealed` 不承诺遮技能，红线 **B19** |
 | 想靠 `inject: ['skills']` 拿 scope 绑定的注册表 | 那一行在 preset 里变 **PENDING**，`apply` 不执行也不报错 | 别注入它；`sealed` 只用 `tools` |
+| 以为 `startActivation` 的 `signal` 能停住子 agent | 它只管**受理之前**；超时只写标记、受试体照跑（实测 700ms 预算 → 15.5s、`completed`） | 要停就 `dispose()`，且只在结果 `aborted` 时写 `timedOut`，红线 **B23** |
+| 以为 `max_depth` 参数能让受试体再派活 | 上限来自**工具行自己的 `maxDepth`**；本机宿主默认 `0`，不写行配置就一个孙会话都起不来 | 在 harness 行里写 `maxDepth`，见[真机状态](.agents/notes/2026-11-11-harness-shape.md#7-真机状态2026-11-11宿主-022-rc1) |
+| 以为 persona 行是**追加**人设 | 它用同一个 section 名注册，**替换**部署人设：系统提示只涨几十字符，容易误判成没生效 | 比 `modelInput.systemPrompt.digest`，别拿长度判 |
+| 以为 `skills.register()` 过了就等于技能能用 | 注册只做**宽松**校验，加载正文时才要求 `source` 是字符串：目录里有它，`skill` 工具一调就报错（真机实测） | 注册对象带上 `source`，红线 **B24**（它真的调一次加载路径） |
 | PowerShell 往返改文件 | 改坏字符，类型检查只抓到一部分 | 只用编辑工具 |
 | `check` 全绿 ≠ 插件能起来 | 加载期不被单测覆盖 | 真机跑一次 |
 | 一次「看起来跑过了」的空实验 | 比一次报错贵得多 | 挂载 + 审计 + 探针在 trial 之前；红线 B5/B6 |

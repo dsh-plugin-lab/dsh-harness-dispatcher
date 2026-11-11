@@ -46,9 +46,11 @@ nothing — the records are the deliverable, and analysis happens outside.
   another row *in this harness* uses instead fails the mount. The tool always succeeds — failure and
   latency belong to `faults`.
 - **Persona** is `harness.persona` (`none`, `terse`, `verbose`, `pair-programmer`, or `custom` with
-  `persona_text`), and it compiles to a row, so it is inside the fingerprint like everything else.
+  `persona_text`), and it compiles to a row, so it is inside the fingerprint like everything else. It
+  **replaces** the deployment persona rather than adding to it: judge it by
+  `modelInput.systemPrompt.digest`, not by how much longer the prompt got.
 
-## Three traps that each cost an experiment
+## Traps that each cost an experiment
 
 - **Two namespaces.** `harness.tools` takes CATALOGUE KEYS (`fs`, `pwsh`); `faults[].tool` takes
   MODEL-FACING TOOL NAMES (`read`, `grep`). A fault naming a catalogue key never fires — and a fault
@@ -58,6 +60,12 @@ nothing — the records are the deliverable, and analysis happens outside.
 - **Compare by `stimulus.fingerprint`, never by file name.** It covers the harness content, the route
   and the delegation depth. Equal fingerprints applied the same thing; different ones did not, whatever
   the files are called.
+- **Delegation is gated by the row, not by `max_depth`.** A subject can only spawn if the harness's own
+  `tool-subagent` row sets `maxDepth` high enough; the request-level `max_depth` does not grant it, and a
+  host default of `0` makes every attempt look like the model simply refusing.
+- **`timeout_ms` cancels the subject.** A trial it stops is recorded as `stopReason: "aborted"` with
+  `timedOut: true` — an observation about the budget, not a harness failure, so do not count it as one
+  when you compare runs.
 
 ## What the records say
 

@@ -386,7 +386,7 @@ harness 文件所在目录，而 run 目录不在任何解析基准上，挂副�
 | `harness_run` | 工具：任务 + 受试 harness + trial 数 → 结构化句柄 | **已实现** |
 | `harness_inspect` | 挂载 + 审计 + 探针（`acquireScope`），**零模型成本**；不带参数时**列出本机 preset**（默认的排第一，坏掉的那条连原因一起列出，不隐藏） | **已实现** |
 | `harness_export` | `readDocument()` → 一份能跑的 harness 文件 | **已实现** |
-| 使用说明 skill | [src/skill.ts](../src/skill.ts)，代码注册、`skills` 服务可选 | **已实现** |
+| 使用说明 skill | [src/skill.ts](../src/skill.ts)，代码注册、`skills` 服务可选 | **已实现**（注册对象要带 `source`，否则只列得出、加载不了，红线 **B24**） |
 | 造工具 / 改工具 | preset 行 [src/tool.ts](../src/tool.ts)：一份文件定义或覆盖一个工具 | **已实现** |
 | 封闭宿主工具与技能通道 | preset 行 [src/sealed.ts](../src/sealed.ts)，见「增量与封闭」 | **已实现**（技能只能靠不给通道） |
 | `session/event` 折叠 | [src/fold.ts](../src/fold.ts)：受试体做了什么 + 被给了什么 | **已实现** |
@@ -407,12 +407,26 @@ harness 文件所在目录，而 run 目录不在任何解析基准上，挂副�
 `isConcurrencySafe: () => false`。gate 与 collector 都按 session 键控，并发**逻辑上**是对的，
 但一次 run 会挂载一份 preset、写一个文件；让一次调用独占 bench 更容易推理。
 
+实测两次重叠调用确实被串行化：后一次的第一个 trial 在前一次的最后一个 trial 结束之后才开始。
+
+### 5.3 停止一个正在跑的受试体
+
+`subagents.startActivation({ signal })` 的 `signal` 只覆盖**受理之前**的工作；一旦受理，
+受试体就不再与该信号相连。所以 `timeout_ms` 不能只把预算信号 abort 掉 —— 那只会让记录写下
+`timedOut: true`，而受试体仍跑到结束（实测 700ms 预算配 15.5s 实际耗时，`stopReason` 还是
+`completed`）。
+
+真正能停的是 `activation.dispose()`：它取消该子会话的这一轮、等到 idle，再把 `result` 以
+`stopReason: "aborted"` 结算。因此 [src/trial.ts](../src/trial.ts) 在预算信号上挂一个
+「取消并 dispose」的监听，并且**只在结果真的是 `aborted` 时才写 `timedOut`**。
+红线 **B23** 钉住这两点，以及「已记录 / 已完成」分开报数。
+
 ---
 
 ## 6. 真机验证（**不属于** `pnpm run check`）
 
-`pnpm run check`（typecheck + build + 32 个单测）全绿**只证明**：类型对、模块能打、纯函数对。
-它**不证明**这个插件在宿主里真的能拉起一个子 agent —— 那是下面这几步，必须人工跑。
+`pnpm run check`（typecheck + build + 单测 + lint + format + release 断言）全绿**只证明**：类型对、
+模块能打、纯函数对。它**不证明**这个插件在宿主里真的能拉起一个子 agent —— 那是下面这几步，必须人工跑。
 
 1. 装进 profile（`plugin_manager install_bundle`，包目录绝对路径）。
 2. **真的拉起一个子 agent**：最小任务跑 1 个 trial，确认
@@ -425,3 +439,17 @@ harness 文件所在目录，而 run 目录不在任何解析基准上，挂副�
 5. 跑完确认没有残留：`agentPresets.list()` 里不该多出 `bench-*`。
 
 **第 2③、3、4 步是假绿探测器** —— 它们比「命令退出码 0」有用得多。
+
+### 6.1 验过的与没验的
+
+上面五步之外，每种边界都**单独**验过一次，结果与陷阱记在
+[真机状态](../.agents/notes/2026-11-11-harness-shape.md#7-真机状态2026-11-11宿主-022-rc1)：
+三种故障模式、四个 persona 变体、多 trial、并发、`maxDepth`、超时、故障可达性、未达 trial 的 run 清理。
+
+**仍然没验**：后台（`ctx.jobs`）通道 —— 它还没实现，不是「验过了但没跑」。
+`prompt` 仍是纯文本而非 `ContentBlock[]`，图与文件进不了题面。
+
+**真机抓到的缺陷都补成了红线**（B8、B17–B19、B23、B24）：单测跑不到加载期与宿主接管之后的行为，
+所以每一类只能靠真机发现的失败，都在红线里留了一条判据。最近两条尤其值得记它们的形状：
+一条是**契约字段缺失**（注册的技能只列得出、加载不了），另一条是**语义说谎**
+（`timedOut: true` 与 `completed` 同时存在）—— 两者都不是崩溃，而是记录看起来正常。

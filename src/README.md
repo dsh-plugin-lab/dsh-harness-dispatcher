@@ -42,7 +42,8 @@ harness 文件的裸模块名只在那里解析得到（见 [AGENTS.md](AGENTS.m
 
 | 文件 | 导出 | 谁依赖 | 改后必跑 |
 |---|---|---|---|
-| [trial.ts](trial.ts) | `runTrial` / `TrialPlan` / `TrialOutcome` | `tools/harness-run` | `fold` 单测 |
+| [trial.ts](trial.ts) | `runTrial` / `TrialPlan` / `TrialOutcome` | `tools/harness-run` | **B23** + `fold` 单测 |
+| [abort.ts](abort.ts) | `onceAborted` | `trial` | `abort` 单测 |
 | [collector.ts](collector.ts) | `FoldCollector` | `tools/harness-run` | `fold` 单测 |
 | [fold.ts](fold.ts) | `foldEvent` / `finishFold` / `summarize` / `TrialObservations` | `collector`、`record` | **B4 / B7** + `fold` 单测 |
 | [record.ts](record.ts) | `openRun` / `stimulusRecord` / `TrialRecord` | 三个工具 | **B5 / B6** + `record` 单测 |
@@ -55,7 +56,7 @@ harness 文件的裸模块名只在那里解析得到（见 [AGENTS.md](AGENTS.m
 | 文件 | 导出 | 说明 |
 |---|---|---|
 | [index.ts](index.ts) | `name` / `inject` / `apply` | 唯一装配点：三个工具 + skill + 提示段 |
-| [skill.ts](skill.ts) | `SKILL_NAME` / `readSkill` / `splitFrontmatter` / `registerSkill` | 代码注册的 skill；正文 + 元信息是 [../skills/dsh-harness-bench/SKILL.md](../skills/dsh-harness-bench/SKILL.md)，`skills` 服务**可选**，注册挂 `ctx.effect`（**B18**） |
+| [skill.ts](skill.ts) | `SKILL_NAME` / `readSkill` / `splitFrontmatter` / `registerSkill` | 代码注册的 skill；正文 + 元信息是 [../skills/dsh-harness-bench/SKILL.md](../skills/dsh-harness-bench/SKILL.md)，`skills` 服务**可选**，注册挂 `ctx.effect`（**B18**），注册对象带 `source`（**B24**） |
 
 `skill.ts` 用代码注册而不是文件目录：文件式 skill 在没把 `customSkillDirs` 指过去的 preset 里
 **不可见且不报错**，是个死指针。但**正文是文件**，而且是一个**合法的 skill 文件**（带 YAML
@@ -101,6 +102,7 @@ frontmatter 的 `name` / `description` / `author` / `metadata.source`），apply
 | 导出记录的字段 | `record.ts` 的 `TrialRecord` → [数据出口只有两个函数](../docs/ARCHITECTURE.md#44-数据出口只有两个函数) |
 | 观测折叠的语义 | `fold.ts` → `fold` 单测 → [折叠的边界是硬的](../docs/ARCHITECTURE.md#43-折叠的边界是硬的) → 红线 B4/B7 |
 | 故障模式 | `fault.ts` + `gate.ts` 三条管线 → [三种故障是三个不同的实验](../docs/ARCHITECTURE.md#23-三种故障是三个不同的实验不是同一个设置的三个档) |
+| 超时 / 取消（停住一个正在跑的受试体） | `trial.ts` 的 `onceAborted` 监听 → [停止一个正在跑的受试体](../docs/ARCHITECTURE.md#53-停止一个正在跑的受试体) → 红线 **B23** |
 | 依赖范围 | `engines.dsh` / `peerDependencies` / devDependencies **三处同批**，且逐字相同 |
 
 ## 参考

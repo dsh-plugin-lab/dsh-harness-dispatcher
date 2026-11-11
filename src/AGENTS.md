@@ -10,15 +10,15 @@
 ```
 index.ts ─→ tools/ ─→ harness / shortcut / subject / trial / record / fold
                           ↓
-                    catalog / digest / text / config / fault / gate / collector
+                    catalog / digest / text / config / fault / gate / collector / abort
 ```
 
 - **`index.ts` 是唯一装配点。** 它注册工具、skill、提示段。别的东西不许调 `ctx.tools.define`。
-- **纯函数层不碰 `ctx`。** `fold` / `digest` / `catalog` / `text` / `fault` 收数据、返数据，
-  不注入服务 —— 这样它们能被单测直接跑，不需要假宿主。
+- **纯函数层不碰 `ctx`。** `fold` / `digest` / `catalog` / `text` / `fault` / `abort` 收数据、
+  返数据，不注入服务 —— 这样它们能被单测直接跑，不需要假宿主。
 - **`tools/` 是唯一知道宿主 API 形状的地方。** 服务调用写在这里，不往下泄。
 
-## 八条硬约束（每条都对应一条红线）
+## 九条硬约束（每条都对应一条红线）
 
 1. **不解析 harness 文件的方言。** 文件交给宿主的 `cordis:include`；本仓只生成一条 include 行。
    自己解析就有了第二套定义，两边一旦不一致没人能判。（红线 **B8**）
@@ -38,6 +38,10 @@ index.ts ─→ tools/ ─→ harness / shortcut / subject / trial / record / fo
    宿主把 disposer 记在**它自己**的 ctx 上，丢掉返回值 = 卸载后残留、热重载后旧值继续赢。（**B18**）
 8. **`finally` 里必须 dispose。** 临时 preset、故障门、探针租约，一个都不许留。
    （红线 **B6**：一次没跑到 trial 1 的 run 必须被 `discard()`）
+9. **要停住受试体只有 `dispose()` 一条路。** `startActivation({ signal })` 的 `signal` 只管
+   **受理之前**：受理之后子会话不再与它相连，abort 一个信号停不下任何东西。所以预算到点要主动
+   `dispose()`（它取消本轮、等 idle、把 `result` 结算成 `aborted`），并且**只有结果真的是
+   `aborted` 才算 `timedOut`**。（红线 **B23**，真机实测：700ms 预算配出 15.5s 的 `completed`）
 
 ## 命名：一个词管一件事
 
