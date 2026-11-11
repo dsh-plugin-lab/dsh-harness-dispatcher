@@ -18,7 +18,7 @@ import { foldEvent, emptyFold, finishFold, summarize } from '../src/fold.ts'
 import { normalizeFaults } from '../src/fault.ts'
 import { harnessRows, harnessLabel, sealedRows } from '../src/harness.ts'
 import { normalizeShortcut, shortcutRows } from '../src/shortcut.ts'
-import { SKILL_NAME, readSkill, splitFrontmatter } from '../src/skill.ts'
+import { SKILL_NAME, readSkill, registerSkill, splitFrontmatter } from '../src/skill.ts'
 import { presetIdFor, presetSummaries } from '../src/subject.ts'
 import { toolSpecOf } from '../src/tool.ts'
 
@@ -759,6 +759,46 @@ describe('B19 — `sealed` promises only what the host can actually do', () => {
     expect(doc).toMatch(/先到者赢/)
     // The other route that looked promising: injecting the service to get a scope-bound registry.
     expect(doc).toMatch(/PENDING/)
+  })
+})
+
+describe('B24 — a registered skill is loadable, not merely listed', () => {
+  /**
+   * The rule: the registration must satisfy the contract the *loading* path validates, not only the one
+   * `register()` validates.
+   *
+   * Measured 2026-11-11 on host `0.2.2-rc.1`: `dsh-harness-bench` appeared in the catalogue and calling
+   * the `skill` tool on it failed with `loaded skill "dsh-harness-bench" source must be a string`. The
+   * registry validates twice — `register()` leniently, `get()` (the path the `skill` tool takes) against
+   * the full definition, which requires `source` and `provider` to be strings. `register()` defaults
+   * `provider` but not `source`, so a registration without one lists fine and cannot be loaded: the skill
+   * is present and unreachable, and no test noticed because nothing tried to load it.
+   */
+  it('carries a loadable registration: a source string and the body verbatim', () => {
+    const registered: Record<string, unknown>[] = []
+    const registry = {
+      register: (skill: Record<string, unknown>) => {
+        registered.push(skill)
+        return () => undefined
+      },
+    }
+    const ctx = {
+      get: (name: string) => (name === 'skills' ? registry : undefined),
+      effect: (run: () => unknown) => run(),
+      logger: { info: () => undefined, warn: () => undefined },
+    }
+    const body = '# not empty\n\nThe body a model reads.'
+    const ok = registerSkill(ctx as never, { name: SKILL_NAME, description: 'd', body })
+
+    expect(ok).toBe(true)
+    expect(registered).toHaveLength(1)
+    const entry = registered[0] ?? {}
+    // The two fields the loading validator insists on. `provider` is defaulted by the registry; `source`
+    // is not.
+    expect(typeof entry.source).toBe('string')
+    expect(entry.source).not.toBe('')
+    expect(entry.content).toBe(body)
+    expect(entry.name).toBe(SKILL_NAME)
   })
 })
 

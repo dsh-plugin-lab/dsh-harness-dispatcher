@@ -64,12 +64,27 @@ const BLOCK_SCALAR = /^[|>][+-]?$/
  * use when the host happens to mount it.
  */
 interface SkillRegistry {
-  register(skill: {
-    readonly name: string
-    readonly description: string
-    readonly content: string
-  }): () => void
+  register(skill: SkillRegistration): () => void
 }
+
+/**
+ * What a runtime registration must carry.
+ *
+ * The registry validates twice: `register()` leniently, and `get()` — the path the `skill` tool takes to
+ * hand the body to a model — against the full definition contract, where `source` and `provider` must be
+ * strings. Registering without them therefore succeeds and *lists*, then fails on load with
+ * `loaded skill "…" source must be a string` (measured 2026-11-11). `register()` defaults `provider` but
+ * not `source`, so carrying it is this module's job.
+ */
+export interface SkillRegistration {
+  readonly name: string
+  readonly description: string
+  readonly source: string
+  readonly content: string
+}
+
+/** Where a runtime registration came from. The registry calls this provider `runtime` too. */
+const SOURCE = 'runtime'
 
 /** One skill file, split into the parts the host needs. */
 export interface LoadedSkill {
@@ -216,6 +231,7 @@ export function registerSkill(ctx: Context, skill?: LoadedSkill): boolean {
         skills.register({
           name: loaded.name,
           description: loaded.description,
+          source: SOURCE,
           content: loaded.body,
         }),
       'harness.skill',
