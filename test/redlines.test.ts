@@ -1341,6 +1341,10 @@ describe('B28 — a stop stops everything', () => {
    *   trial lands as `aborted` with `interrupted: true` and the next trial still starts (verified on this
    *   machine: two interrupted trials, three records, run completed).
    * - "this run is void" — `job_kill`, which reaches the same code through the job's own controller.
+   *
+   * And the same stop was measured again after the fix, with the opposite result: trial 1 `completed` at
+   * 32.8s, trial 2 cut at 10.6s as `aborted`, two of four records — where the old wiring had let trial 2
+   * run its full 30.0s and record `completed` first.
    */
   it('cancels the trial in flight and starts no more', () => {
     const body = stripComments(sources().get('src/run.ts') ?? '')
