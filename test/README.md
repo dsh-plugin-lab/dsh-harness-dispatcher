@@ -1,6 +1,7 @@
 # test/ — 覆盖范围与运行
 
-8 个文件 113 条。**不连宿主、不联网、不花额度**。约束见 [AGENTS.md](AGENTS.md)。
+一览：**不连宿主、不联网、不花额度**。约束见 [AGENTS.md](AGENTS.md)，条数与覆盖随时会变，
+以文件本身为准。
 
 ## 怎么跑
 
@@ -12,18 +13,18 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 
 ## 每个文件覆盖什么
 
-| 文件 | 条数 | 覆盖 | 对应源码 |
-|---|---|---|---|
-| [redlines.test.ts](redlines.test.ts) | 55 | **红线 B1–B16**：本仓的宪法 | 横切全仓 |
-| [harness.test.ts](harness.test.ts) | 17 | 路径候选、扩展名、捕获、挂载行、`file:` URL | [src/harness.ts](../src/harness.ts) |
-| [fold.test.ts](fold.test.ts) | 12 | 事件折叠成确定性特征、缺数据 ≠ 0 | [src/fold.ts](../src/fold.ts) |
-| [shortcut.test.ts](shortcut.test.ts) | 9 | 捷径编译、工具排序、persona 变体 | [src/shortcut.ts](../src/shortcut.ts) |
-| [fault.test.ts](fault.test.ts) | 7 | 三种故障模式、可达性校验 | [src/fault.ts](../src/fault.ts) |
-| [record.test.ts](record.test.ts) | 6 | run 目录形状、`wx` 独占、`discard` | [src/record.ts](../src/record.ts) |
-| [catalog.test.ts](catalog.test.ts) | 4 | 目录键、默认集、描述生成 | [src/catalog.ts](../src/catalog.ts) |
-| [smoke.test.ts](smoke.test.ts) | 3 | 模块能 import、注册面存在 | [src/index.ts](../src/index.ts) |
+| 文件 | 覆盖 | 对应源码 |
+|---|---|---|
+| [redlines.test.ts](redlines.test.ts) | **红线**（编号见下表）：本仓的宪法 | 横切全仓 |
+| [harness.test.ts](harness.test.ts) | 路径候选、扩展名、捕获、挂载行、`file:` URL | [src/harness.ts](../src/harness.ts) |
+| [fold.test.ts](fold.test.ts) | 事件折叠成确定性特征、缺数据 ≠ 0 | [src/fold.ts](../src/fold.ts) |
+| [shortcut.test.ts](shortcut.test.ts) | 捷径编译、工具排序、persona 变体 | [src/shortcut.ts](../src/shortcut.ts) |
+| [fault.test.ts](fault.test.ts) | 三种故障模式、可达性校验 | [src/fault.ts](../src/fault.ts) |
+| [record.test.ts](record.test.ts) | run 目录形状、`wx` 独占、`discard` | [src/record.ts](../src/record.ts) |
+| [catalog.test.ts](catalog.test.ts) | 目录键、默认集、描述生成 | [src/catalog.ts](../src/catalog.ts) |
+| [smoke.test.ts](smoke.test.ts) | 模块能 import、注册面存在 | [src/index.ts](../src/index.ts) |
 
-## 红线 B1–B16 各管什么
+## 红线各管什么
 
 | 编号 | 判据 |
 |---|---|
@@ -43,6 +44,9 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 | B14 | 文档不指向已删文件、不提已退休的工具名 |
 | B15 | 封起来的 harness 是完整工具集：遮罩行排在 harness 行之前 |
 | B16 | 源码 import 的包必须在清单里声明；peer 与 dev 范围相同；有运行时导入的包必须 external |
+| B17 | `surface` 报「受试体能到达的」，不是「注册表里有的」；无注册表 / 无可达 / 有名单三态可分 |
+| B18 | 插件给宿主的注册由自己的 fiber 拥有（`ctx.effect`），失败不连累工具半边 |
+| B19 | `sealed` 只承诺实测过的：遮工具，不遮技能，且限制写在会被读到的地方 |
 
 ## 已知盲区（**不是遗漏，是边界**）
 

@@ -675,3 +675,84 @@ describe('B14 — documentation points at files and tools that exist', () => {
     }
   })
 })
+
+describe('B17 — the surface reports what the subject can reach, not what the registry holds', () => {
+  /**
+   * The rule: `surface` means "what the subject can actually call". It was violated by counting skills
+   * from the registry for the subject's scope — `list({ scope })` merges the global layer, so a *sealed*
+   * harness with four tools and no `skill` tool was recorded as having six skills it could not name. A
+   * probe that answers a different question than its name promises is worse than no probe: the
+   * experimenter reads "6 skills" and concludes the harness was contaminated, or that it was not.
+   */
+  it('reports no loadable skill when the subject has no way to load one', () => {
+    const subject = sources().get('src/subject.ts') ?? ''
+    // The condition the host itself publishes the catalogue on.
+    expect(subject).toContain('SKILL_TOOL')
+    expect(subject).toMatch(/tools\.includes\(SKILL_TOOL\)/)
+    // A skill the model may not invoke is not reachable either; the `skill` tool refuses it.
+    expect(subject).toMatch(/invocation\.modelInvocable/)
+  })
+
+  it('keeps three outcomes distinguishable: no registry, nothing loadable, a list', () => {
+    // `null` (this host has no skill service) and `[]` (a service, nothing reachable) are different
+    // inputs, exactly as a missing measurement differs from a zero one.
+    const subject = sources().get('src/subject.ts') ?? ''
+    expect(subject).toContain('return null')
+    expect(subject).toContain('return []')
+    const inspect = sources().get('src/tools/harness-inspect.ts') ?? ''
+    expect(inspect).toMatch(/no skill registry on this host/)
+  })
+})
+
+describe('B18 — a registration the plugin makes is released when the plugin unloads', () => {
+  /**
+   * The rule: state this plugin registers belongs to its fiber. It was violated in the skill half —
+   * `ctx.get('skills').register(...)` returns a disposer filed under the *registry's* context, and it was
+   * discarded. A hot reload then hit "already registered", kept the previous body and logged a warning:
+   * editing the skill looked like it had no effect, which a reader would blame on the edit.
+   */
+  it('wraps the skill registration in an effect of this plugin', () => {
+    const skill = sources().get('src/skill.ts') ?? ''
+    expect(skill).toMatch(/ctx\.effect\(\s*\n?\s*\(\)\s*=>/)
+    expect(skill).toContain("'harness.skill'")
+  })
+
+  it('does not let a failing skill registration take the tools down with it', () => {
+    // The skill explains the bench; the tools are the bench. A profile that refuses the skill must still
+    // get working tools, which is why `skills` is not an injected dependency either.
+    const skill = sources().get('src/skill.ts') ?? ''
+    expect(skill).toMatch(/catch \(error\)/)
+    expect(skill).toContain('return false')
+  })
+})
+
+describe('B19 — `sealed` promises only what the host can actually do', () => {
+  /**
+   * The rule: a mask is only claimed where it was measured. Two attempts at shadowing an inherited skill
+   * (a same-name non-invocable registration written from inside the preset tree, tried both automatically
+   * and by hand) left the catalogue intact on `0.2.2-rc.1`: `ctx.skills.register()` files a registration
+   * into the layer of the registry's own context, which is the host, so the entry lands in the same layer
+   * as the thing it was meant to shadow and the first registration wins. Shipping the mechanism anyway
+   * would have meant a `sealed: true` that silently did not seal — the failure this repository exists to
+   * prevent.
+   */
+  it('does not register skills from the mask row', () => {
+    // Comments are stripped: the module *explains* in prose why registering cannot work, and the rule is
+    // about what the code does.
+    const sealed = stripComments(sources().get('src/sealed.ts') ?? '')
+    expect(sealed).not.toContain('denySkills')
+    expect(sealed).not.toContain('skills')
+    // The one thing it does, and can prove.
+    expect(sealed).toContain('ctx.tools.restrict(')
+  })
+
+  it('records the limitation where a caller will read it', () => {
+    // A limitation nobody can find is how the next person re-implements the mask that does not work, so
+    // both the fact and its reason have to survive in the doc.
+    const harness = sources().get('src/harness.ts') ?? ''
+    expect(harness).toMatch(/skill/i)
+    const doc = readFileSync(join(ROOT, 'docs/ARCHITECTURE.md'), 'utf8')
+    expect(doc).toMatch(/没有遮罩 API/)
+    expect(doc).toMatch(/先到者赢/)
+  })
+})

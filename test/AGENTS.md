@@ -15,13 +15,13 @@
 
 ## 红线文件的结构
 
-[redlines.test.ts](redlines.test.ts) 一个 `describe` 一组，编号连续（B1…B16）。
+[redlines.test.ts](redlines.test.ts) 一个 `describe` 一组，编号连续。
 新加一条：
 
 1. 挑下一个空号，`describe('B<n> — <一句话判据>', …)`。
 2. **注释写清「哪个真实现象让这条必须存在」**——不写理由的红线下次会被当成障碍删掉。
 3. 加完立刻反向控制一次。
-4. 更新根 [AGENTS.md](../AGENTS.md) 的仪表盘数字（组数 + 条数）。
+4. 覆盖清单只有 [README.md](README.md) 一个 home，别在别处重复条数。
 
 ## 两个必须小心的坑
 
