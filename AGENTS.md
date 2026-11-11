@@ -17,7 +17,10 @@
 Model + Harness = Agent        →       我们给「Harness」打分，不给模型打分
 ```
 
-- **受试变量**：System prompt（persona）、工具集（含故障注入）、模型路由。
+- **受试变量**：子 agent 的整份装配 —— 凡是「一个插件能做的事」都能按 agent 单独改
+  （提示段、工具、skills、中间件、模型路由）。硬上界是 **Host 服务层**（agent loop、持久化、
+  模型适配器、审批策略）：改它等于改整个进程，不是改一个 agent。
+  故障注入是**时变**变量，装在**工具管线**上，不在装配里。
 - **控制变量**：任务集是输入，固定不动。
 - **观测**：旁路折叠会话事件流，提取**确定性**特征（计数、布尔、耗时），不碰执行。
 - **边界**：本仓**不做统计**。不在这里算 P 值、不做语义评分 —— 全部导出成 JSONL，外部（R / Python）去做。
@@ -25,10 +28,14 @@ Model + Harness = Agent        →       我们给「Harness」打分，不给�
 **设计取舍与依据在 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**，决策记录在 [.agents/notes/](.agents/notes/)。
 本文件只写「怎么干活」。
 
-> **⚠ 形状未定。** `harness` 现在实现成一个 6 字段枚举，但**这被判定为做窄了**。
-> 「它应该是一份插件行列表 + 指纹」这场讨论还在进行，未拍板项与各自卡点见
-> [.agents/notes/2026-11-11-harness-shape-open-discussion.md](.agents/notes/2026-11-11-harness-shape-open-discussion.md)。
-> **在它定案之前，不要按现在的枚举形状去加固或对外承诺 API。**
+> **Harness = 一份插件行列表。** 它写在哪由作者定；跑的时候**逐字复制进 run 目录当证据**，
+> 而**挂载的是操作者那份原文件**（副本所在目录不在模块解析基准上，挂副本会让每一行都 import 失败）。
+> 两次跑是不是同一份装配，靠**受试体自己日志里被观测到的装配**来判（不是比文件）。
+> 判据分「声明 / 生效 / 观测」三层，理由、出处与真机纠正见
+> [.agents/notes/2026-11-11-harness-shape.md](.agents/notes/2026-11-11-harness-shape.md)。
+>
+> `harness.tools` / `harness.persona` 那几个标量是**糖**，编译成行列表并同样落盘 —— 它们**不是** harness
+> 的定义。别再往它们上面加东西；要加就加成行列表能表达的东西。
 
 ## 宿主版本线（**动手前先现查**）
 
@@ -47,7 +54,8 @@ Model + Harness = Agent        →       我们给「Harness」打分，不给�
    检出侧是 `() => void`。照检出写会「编译通过、运行期拿不到值」。
 2. `SessionProjectionStateMap` **检出有、在跑版不存在**；在跑版改用第二个重载表达 host-only 单元。
 3. `session-projection` 等包**自带嵌套 `node_modules/zod@4.4.3`**，宿主顶层是 **4.6.7** ——
-   跨实例递 schema 是静默失败面。**本仓因此不用 Projection 单元**（见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §4.2）。
+   跨实例递 schema 是静默失败面。**本仓因此不用 Projection 单元**（理由见
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 的「为什么**不用** Projection 单元」）。
 
 **且**：`Session.snapshotEvents()` / `eventAt()` / `ownEvents()` 在**两侧都**标着
 `@deprecated … new calls are prohibited`。**读会话事件一律走 `ctx.on('session/event')` 折叠。**
@@ -66,16 +74,18 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 
 - `pnpm run typecheck` —— `tsc -p tsconfig.json`，**0 error** 是硬要求。
 - `pnpm run build` —— tsdown，产物进 `lib/`（git 忽略，由 `files` 发布）。
-- `pnpm run test` —— 纯函数单测 + **红线 9 组 25 条**（[test/redlines.test.ts](test/redlines.test.ts)）。
-  **不连宿主、不联网、不花额度**。
-- `pnpm run lint` / `pnpm run format:check` —— eslint / prettier。**手改过源码就一定要跑**：
-  用字符串替换改文件很容易带上不合格式的换行，而它不会在任何地方报错。
+- `pnpm run test` —— 纯函数单测 + **红线 14 组 49 条**（[test/redlines.test.ts](test/redlines.test.ts)）。
+  **不连宿主、不联网、不花额度**。全部 8 个文件 107 条，覆盖范围见 [test/README.md](test/README.md)。
+- `pnpm run lint` / `pnpm run format:check` —— eslint / prettier。**手改过源码就一定要跑**。
+  两个实测过的坑：用字符串替换改文件很容易带上不合格式的换行，而它不会在任何地方报错；
+  **PowerShell 的 `Get-Content`/`Set-Content` 往返会破坏字符**（2026-11-11 实测把 `*` 写成 `D`、
+  `D` 写成 `i`，把 `harnessDir` 毁成 `harnessiir`），所以**改文件只用编辑工具，不要经过 shell 往返**。
 - `pnpm run check:release` —— 发布态不变量（[scripts/check-release.mjs](scripts/check-release.mjs)）。
   **它拒绝 `private: true`**，所以本仓必须保持可发布形状。
 
 **`pnpm run check` 不覆盖加载期**（`apply()` 里的每一行）—— 而加载期是「插件根本起不来」的唯一入口。
 实测栽过：`'fs' in TOOL_KEYS`（`Set` 用 `in`，恒 false）让插件拒绝激活，而 check 全绿。
-见 [.agents/notes/2026-11-10-first-real-machine-run.md](.agents/notes/2026-11-10-first-real-machine-run.md) §一。
+见 [首次真机验证](.agents/notes/2026-11-10-first-real-machine-run.md#一pnpm-run-check-全绿之后装上仍然当场失败)。
 
 **红线做了反向控制**：把 `DEFAULT_TOOLS` 改成不存在的键、往源码注入一个 `mean()`，
 对应断言各自变红后再复原。**「现在这条绿」和「这条判据有牙齿」是两件事**，后者要单独证。
@@ -134,18 +144,40 @@ node <组织仓>/scripts/scaffold.mjs check <本仓路径>     # 期望 all byte
   注入 `fail` → 记录落地。干净基线 1 次工具调用 / 0 错误 / 3.4s；
   注入后 3 次调用 / 2 错误 / 9.5s 且绕道 `pwsh`。**装配确实是变量。**
 - **边界只在单测里**：`deny` / `latency` 两模式、persona 其余三档、多 trial、并发、
-  `maxDepth > 1`、后台通道 —— **都没有真机跑过**。见那份 note 的 §四。
+  `maxDepth > 1`、后台通道 —— **都没有真机跑过**。清单见
+  [首次真机验证的「还没验的」](.agents/notes/2026-11-10-first-real-machine-run.md#四还没验的)。
+- **加载期与 `cordis:include` 已真机确认**（2026-11-11）：插件行能激活、include 能解析并挂载
+  文件里的行；同时纠正两个 Windows 缺陷（`file:` URL、不挂副本）。**工具被模型调用的端到端仍缺**
+  （实验 profile 没有可用的模型路由）。见
+  [Harness 的形状的「真机状态」](.agents/notes/2026-11-11-harness-shape.md#7-真机状态2026-11-11宿主-022-rc1)。
+
+## 待办
+
+- [ ] **给实验 profile 一条可用模型路由**，跑通 `harness_inspect` / `harness_run` 的端到端
+      （工具要被调用到，必须有模型回合；当前卡在这里）。
+- [ ] 真机验 `deny` / `latency` 两模式、persona 其余三档、多 trial、并发、`maxDepth > 1`、后台通道。
+- [ ] `prompt` 仍是纯文本，没做成 `ContentBlock[]`（图 / 文件）。**已知缺口，不是已完成。**
+- [ ] 本仓从未真机跑过 `{ preset: "standard" }` 那一支的 `harness_inspect`。
+
+## 活跃坑
+
+| 坑 | 后果 | 防线 |
+|---|---|---|
+| Windows 上传绝对路径给 `cordis:include` | `new URL` 把盘符当 scheme，行**永远挂不上** | 一律 `pathToFileURL()`，红线 **B8** |
+| harness 文件放在 profile 树 / link 仓之外 | 每一行的裸模块名 `MODULE_NOT_FOUND` | `harnessDir` 默认在 profile 内，红线 **B8** |
+| PowerShell `Get-Content`/`Set-Content` 往返 | **改坏字符**（`*`→`D`、`D`→`i`），类型检查只抓到一部分 | 只用编辑工具改文件 |
+| `pnpm run check` 全绿 ≠ 插件能起来 | 加载期（`apply()`）不被任何单测覆盖 | 真机跑一次；见[首次真机验证](.agents/notes/2026-11-10-first-real-machine-run.md#一pnpm-run-check-全绿之后装上仍然当场失败) |
+| 一次「看起来跑过了」的空实验 | 比一次报错贵得多 | 挂载 + 审计 + 探针在 trial 之前；红线 B5/B6 |
 
 ## 改动影响路由
 
-| 你改了 | 同批必须改 |
+**逐文件的影响面在 [src/README.md](src/README.md) 的「变更影响路由」。** 这里只留跨层的三条，
+因为它们同时牵动文档与测试，不属于任何单个源码目录：
+
+| 你在改的东西 | 同批必须改 |
 |---|---|
-| 工具的名字 / 数量 / 参数 schema | [src/tools/](src/tools/) 的注册处 → [ARCHITECTURE 的「能力面」](docs/ARCHITECTURE.md#5-能力面) |
-| Harness 配置的形状（字段增删改） | [src/harness.ts](src/harness.ts) → [ARCHITECTURE 的「Harness 是封闭词汇表」](docs/ARCHITECTURE.md#3-harness-是封闭词汇表不是自由-json) → [src/record.ts](src/record.ts) 里 `TrialRecord.harness` 的字段 |
-| 工具目录新增一个键 | [src/catalog.ts](src/catalog.ts) → 单测的 `KNOWN` 集 → [ARCHITECTURE 的「Harness 是封闭词汇表」](docs/ARCHITECTURE.md#3-harness-是封闭词汇表不是自由-json) |
-| 导出记录的字段 | [src/record.ts](src/record.ts) 的 `TrialRecord` → [ARCHITECTURE 的「数据出口只有两个函数」](docs/ARCHITECTURE.md#44-数据出口只有两个函数) |
-| 观测折叠的语义（算什么特征） | [src/trace.ts](src/trace.ts) → 单测 → [ARCHITECTURE 的「折叠的边界是硬的」](docs/ARCHITECTURE.md#43-折叠的边界是硬的) |
-| 故障模式（deny / fail / latency） | [src/gate.ts](src/gate.ts) 三条管线 → [ARCHITECTURE 的「三种故障是三个不同的实验」](docs/ARCHITECTURE.md#23-三种故障是三个不同的实验不是同一个设置的三个档) |
+| 工具的名字 / 数量 / 参数 schema | [src/tools/](src/tools/) 的注册处 → [能力面](docs/ARCHITECTURE.md#5-能力面) → [test/README.md](test/README.md) 的红线 B11/B14 |
+| 给某个东西改名 | 红线 **B13/B14**：源码旧词与文档旧工具名两侧都兜住 |
 | 依赖范围 | `engines.dsh` / `peerDependencies` / devDependencies **三处同批**，且逐字相同 |
 | 任何文档 | 跑链接校验（见下），错误数保持 0 |
 
@@ -160,6 +192,10 @@ node <组织仓>/scripts/scaffold.mjs check <本仓路径>     # 期望 all byte
 4. **受试环境的失败要记成数据，不是异常。** 子 agent 跑挂了是**一个观测结果**（`stopReason`），
    不是本插件的 bug —— 只有「本插件自己坏了」才抛。
 5. **凭据、会话内容不进导出记录。** 记录只放结构化的计数与短标签；prompt 原文另存且由调用方显式开启。
+6. **输入快照同等对待凭据。** run 目录里的 `harness.<ext>` 是**逐字**副本，行 config 能装任何东西
+   （包括 API key —— 本机 profile 的 patch 里就真有一个）。所以规矩要从「记录不带凭据」扩到
+   **「harness 文件不许带凭据，因为它会被原样复制进证据」**。
+   **不写启发式扫密钥**（会漏也会误报）；靠声明式纪律 + 让副本可见。
 
 ## 发布前
 

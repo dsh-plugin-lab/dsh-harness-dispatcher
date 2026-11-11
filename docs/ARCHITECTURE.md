@@ -19,15 +19,15 @@
 | 原设想 | 落地 | 关键改动 |
 |---|---|---|
 | ① SUT：Harness 是变量 | **成立**，用 `agentPreset` + `agentOptions` | 不用 `fork`（它继承父对话，污染控制变量） |
-| ② 配置即代码：Harness 是个 JSON | **成立**，但**不是自由 JSON** | 改成**封闭词汇表**：工具取自固定目录、故障取自三种模式 |
+| ② 配置即代码：Harness 是个 JSON | **成立，但形状已改** | 不是自由 JSON，也不是当初的封闭枚举 —— **是一份插件行列表文件**，见 [形状（已定）](../.agents/notes/2026-11-11-harness-shape.md#1-形状已定) |
 | ③ Agentic 调度：封装成 Tool-Calling | **成立**，但角色反过来 | 主 Agent 只选**参数**，实验设计不交给模型现编 |
 | ④ 旁路观测：Projection 当探针 | **方向对，机制换掉** | Projection **不适合**；真正的探针是 `session/event` 折叠 |
 
 另外挖到两个**原方案里没有、但更好**的接缝：
 
-- **故障注入不该装进 preset，该装在工具的 Scoped 管线上**（§2）—— 一条宿主级监听，按
+- **故障注入不该装进 preset，该装在工具的 Scoped 管线上**（见下文「故障注入」）—— 一条宿主级监听，按
   `exec.agent` 精确命中受试 session，不碰组合、不怕行序、连孙 agent 都能覆盖。
-- **"读子 agent 的日志"这条路在在跑宿主里是被禁的**（§4.1）—— `snapshotEvents` / `eventAt` /
+- **"读子 agent 的日志"这条路在在跑宿主里是被禁的**（见下文「先撞墙」）—— `snapshotEvents` / `eventAt` /
   `ownEvents` 三者都带 `@deprecated … new calls are prohibited`。这不是风格问题。
 
 ---
@@ -118,7 +118,19 @@
 
 ---
 
-## 3. Harness 是「封闭词汇表」，不是自由 JSON
+## 3. Harness 的形状（**本节前半已被取代**）
+
+> **⚠ 状态：这一节描述的是「封闭词汇表」，它已被
+> [.agents/notes/2026-11-11-harness-shape.md](../.agents/notes/2026-11-11-harness-shape.md) 取代。**
+> 现在的形状是**一份插件行列表文件**，跑的时候逐字复制进 run 目录；代码里那个 6 字段枚举
+> 降级成捷径（`harness.tools` / `harness.persona` 那几个标量）。
+>
+> **原文保留不删**，因为它记录了**为什么当初选枚举**（「原设想哪儿不对」那节的静默失败推理），
+> 而那个推理后来被证明不成立（判据本身错了，见
+> [被推翻的判断](../.agents/notes/2026-11-11-harness-shape.md#4-被推翻的判断保留证据价值) 第 2 行）。
+> 保留它是为了**别再犯同一个错**，不是因为它还有效。
+>
+> 下面「一个被否掉的更省事做法」里的 `readDocument` 断言是**事实错误**，已就地更正。
 
 ### 3.1 原设想哪儿不对
 
@@ -146,18 +158,42 @@ max_depth:       ≥ 1
 `normalize()` 会拒绝：未知工具键、空工具集（要消融必须显式传空之外的写法）、
 同一工具的**矛盾故障**、`latency_ms` 用在非 latency 模式、provider/model 只给一半、`max_depth < 1`。
 
-**判据**：枚举错不了，自由 JSON 会错；而且枚举让「同一份 Harness」能被两个独立 trial 复现 ——
+**当时的判据**：枚举错不了，自由 JSON 会错；而且枚举让「同一份 Harness」能被两个独立 trial 复现 ——
 这正是「控制变量」的前提。
 
-### 3.3 一个被否掉的更省事做法：克隆基线 preset
+> **这条判据后来被证明是错的，错在哪值得记住**：枚举防住的只有**拼写**。真正的静默失败是另一类 ——
+> 「看起来有效的空结果」（往不存在的工具注入故障、跑了一组其实没施加任何条件的 trial），
+> 而它**不是词汇表宽度造成的**。收窄词汇的代价是「你真正想测的东西根本进不来」。
+> 治它的是**指纹 + 可观测装配**，不是收窄。见
+> [判据三层](../.agents/notes/2026-11-11-harness-shape.md#3-判据三层)。
 
-想过「读 `agentPresets.readDocument(base)` 拿 YAML → 改几行 → 挂回去」。
-**不通**：那个 read 是给**展示**用的，`!!js` 条件以文本形态出现、求值后形态不保留，
+### 3.3 一个被否掉的更省事做法：克隆基线 preset —— **这条已被推翻**
+
+想过「读 `agentPresets.readDocument(base)` 拿 YAML → 改几行 → 挂回去」，
+当时的结论是**不通**：那个 read 是给**展示**用的，`!!js` 条件以文本形态出现、求值后形态不保留，
 而且官方明确「nothing accepts YAML back」（`在跑:` `dsh-agent-preset-registry` README）。
-拿它当输入会**静默改变组合**。
 
-所以 Harness **自己声明行**（[src/preset-rows.ts](../src/preset-rows.ts)）：
-persona 行（当变体要求时）在前，工具行按目录键展开在后。**行序由这一处拥有**，调用方无从写错。
+**这个结论错了，错法很具体**：把「整份 document 不能回挂」读成了「`plugins` 不能回挂」。
+`readDocument` 只 dump `plugins` 数组（`lib/types/index.js:239-250`），用的是 `entryListSchema`，
+其中 `JsExpr` 就是 `{ __jsExpr: string }`，并被**原样写回** `!!js`（`cordis-plugin-include/src/index.ts:16-25`）。
+`实测:` 往返成立：
+
+```
+parsed:  [{"id":"b","name":"@x/y","disabled":{"__jsExpr":"process.platform === 'win32'"}}]
+dump →   disabled: !!js process.platform === 'win32'
+roundtrip equal: true
+```
+
+「求值后形态不保留」恰恰是**要的**：重新挂载就该重新求值。
+所以 `dump → 改 → 挂回去` 这条路是通的，它现在就是 `harness_export` 的依据（见
+[落地状态](../.agents/notes/2026-11-11-harness-shape.md#6-落地状态) 第 7 项）。
+
+**代码现状**：捷径从 [src/catalog.ts](../src/catalog.ts) 经 [src/shortcut.ts](../src/shortcut.ts)
+编译成行列表：persona 行（当变体要求时）在前，工具行按目录键展开在后，
+**行序由那一处拥有**，调用方无从写错。文件式 harness 则**一行都不生成** —— 它只产生一条
+`cordis:include` 行，把解析交给宿主（[src/harness.ts](../src/harness.ts)）。
+刻意不继承操作者自己那份 preset —— 那才是两个变体可比、
+且受试体不会捡到评测台没选的工具的原因。
 
 ### 3.4 挂载的五条硬约束（都抛错，不警告）
 
@@ -177,7 +213,7 @@ persona 行（当变体要求时）在前，工具行按目录键展开在后。
 
 工具返回 `{ runId, harnessId, recordPath, trials, completed, outcomes[] }`（`output.schema`）。
 不返回「跑完了，平均 3.2 次工具调用」——散文返回值无法被脚本消费，
-而且**顺手算均值会把统计口径藏进插件里**，而口径是可变的（见 §5）。
+而且**顺手算均值会把统计口径藏进插件里**，而口径是可变的（见下文「能力面」）。
 
 ---
 
@@ -212,8 +248,9 @@ ownEvents()      @deprecated … new calls are prohibited
    「每个已提交事件驱动每个单元、返回同一引用表示无关」，产出是**可发布的会话状态**；
    而本仓需要的是「跑到结束读一次、读完就扔」的一次性折叠，出自同一个进程。
 
-**所以**：本仓用 `ctx.on('session/event')` 自己折叠（[src/observe.ts](../src/observe.ts)），
-按 session id 布防/撤防。等哪天要**给 UI 做实时评测面板**，那才是同时注册一个 projection 的时机 ——
+**所以**：本仓用 `ctx.on('session/event')` 自己折叠（[src/fold.ts](../src/fold.ts) 的 reducer +
+[src/collector.ts](../src/collector.ts) 的布防），按 session id 布防/撤防。等哪天要
+**给 UI 做实时评测面板**，那才是同时注册一个 projection 的时机 ——
 记录本身不依赖它。
 
 > 这条值得单独记：**「原生的」不等于「合适的」**。Projection 是原生接缝、写起来也漂亮，
@@ -241,12 +278,23 @@ ownEvents()      @deprecated … new calls are prohibited
 
 ```
 <outputRoot>/<runId>/
-  run.json        # { runId, startedAt, taskId, note, recordSchema: 1 }
-  trials.jsonl    # 每 trial 一行
+  run.json          # { runId, startedAt, recordSchema, stimulus, task, surface, note }
+  harness.<ext>     # harness 的逐字副本（捷径形式是 harness.json）
+  trials.jsonl      # 每 trial 一行：stimulus、结果、两条折叠视图（trace / modelInput）
+  README.txt        # 给读数据的人：该比 stimulus.fingerprint
 ```
+
+**副本是证据，不是执行体。** 挂载用的是**操作者那份原文件**：宿主把 include 的解析基准设成
+harness 文件所在目录，而 run 目录不在任何解析基准上，挂副本会让文件里每一行都 import 失败
+（真机实测，见 [真机状态](../.agents/notes/2026-11-11-harness-shape.md#7-真机状态2026-11-11宿主-022-rc1)）。
+代价是「读」与「挂」之间有个极小的窗口；换来的是「挂上去的东西能跑」。
+所以「harness 文件放哪」仍然不影响可复现性 —— 摘要来自读到的那份文本，副本可逐字比对。
+设计推演见 [为什么 harness 文件「放哪都行」](../.agents/notes/2026-11-11-harness-shape.md#2-为什么-harness-文件放哪都行)。
 
 `openRun` 用 `flag: 'wx'` 建 `trials.jsonl`：**同目录第二次 run 直接失败**。
 理由：静默追加会把两个实验混进一个「还能正常解析」的文件里。
+`run.discard()` 是它的反面：一次没跑到第一个 trial 的 run 会被整目录删掉 ——
+「目录存在但一行记录都没有」和「跑了但受试体什么都没做」在数据上分不开，所以前者不能留下。
 
 ---
 
@@ -254,12 +302,14 @@ ownEvents()      @deprecated … new calls are prohibited
 
 | 面 | 形态 | 阶段 |
 |---|---|---|
-| `run_benchmark` | 工具：任务 + 受控 Harness + trial 数 → 结构化句柄 | **MVP** |
-| `session/event` 折叠 | [src/observe.ts](../src/observe.ts)，按 session 布防 | **MVP** |
-| 工具管线故障注入 | [src/gate.ts](../src/gate.ts)，三种模式 | **MVP** |
-| JSONL 导出 | [src/record.ts](../src/record.ts) | **MVP** |
+| `harness_run` | 工具：任务 + 受试 harness + trial 数 → 结构化句柄 | **已实现** |
+| `harness_inspect` | 挂载 + 审计 + 探针（`acquireScope`），**零模型成本**；也接受 `preset` | **已实现** |
+| `harness_export` | `readDocument()` → 一份能跑的 harness 文件 | **已实现** |
+| 使用说明 skill | [src/skill.ts](../src/skill.ts)，代码注册、`skills` 服务可选 | **已实现** |
+| `session/event` 折叠 | [src/fold.ts](../src/fold.ts)：受试体做了什么 + 被给了什么 | **已实现** |
+| 工具管线故障注入 | [src/gate.ts](../src/gate.ts)，三种模式 | **已实现** |
+| JSONL 导出 | [src/record.ts](../src/record.ts) | **已实现** |
 | 后台任务版（`ctx.jobs.start`） | 长跑用，取消权转给任务自己 | 后续 |
-| 自由 `EntryOptions[]` 逃生口 | 给人和脚本用，默认不对模型暴露 | 后续 |
 | 评测面板（Projection + 客户端槽） | 只做展示，不影响记录 | 后续 |
 
 ### 5.1 后台通道为什么是第二步
