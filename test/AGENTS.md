@@ -15,7 +15,7 @@
 
 ## 红线文件的结构
 
-[redlines.test.ts](redlines.test.ts) 一个 `describe` 一组，编号连续（B1…B14）。
+[redlines.test.ts](redlines.test.ts) 一个 `describe` 一组，编号连续（B1…B15）。
 新加一条：
 
 1. 挑下一个空号，`describe('B<n> — <一句话判据>', …)`。

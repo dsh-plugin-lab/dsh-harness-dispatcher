@@ -16,7 +16,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { CATALOG, DEFAULT_TOOLS, TOOL_CATALOG, TOOL_KEYS } from '../src/catalog.ts'
 import { foldEvent, emptyFold, finishFold, summarize } from '../src/fold.ts'
 import { normalizeFaults } from '../src/fault.ts'
-import { harnessRows, harnessLabel } from '../src/harness.ts'
+import { harnessRows, harnessLabel, sealedRows } from '../src/harness.ts'
 import { normalizeShortcut, shortcutRows } from '../src/shortcut.ts'
 import { SKILL_NAME } from '../src/skill.ts'
 import { presetIdFor } from '../src/subject.ts'
@@ -522,6 +522,36 @@ describe('B13 — the vocabulary is one word per thing', () => {
     const rows = shortcutRows(normalizeShortcut({ tools: ['fs'] }, DEFAULTS, CATALOG))
     expect(rows).toHaveLength(1)
     expect(TOOL_KEYS.has('fs')).toBe(true)
+  })
+})
+
+describe('B15 — a sealed harness is the whole tool set, not a delta', () => {
+  it('puts the mask row before the harness rows', () => {
+    // `tools.restrict` masks the scope it is called from, and a scope's own registrations are exempt.
+    // Mounting the mask first is what keeps the harness's tools visible; reversed, the subject would
+    // see nothing at all — a silent empty bench instead of an error.
+    for (const file of ['src/tools/harness-inspect.ts', 'src/tools/harness-run.ts']) {
+      const code = sources().get(file) ?? ''
+      const mask = code.indexOf('sealedRows(')
+      const harness = code.indexOf('harnessRows(')
+      expect(mask, `${file} never masks`).toBeGreaterThan(-1)
+      expect(mask < harness, `${file} mounts the harness before masking it`).toBe(true)
+    }
+  })
+
+  it('ships the masking plugin as an addressable entry', () => {
+    // It has to be resolvable by name from inside a preset tree, so it cannot live only in index.ts.
+    expect(sources().get('src/sealed.ts')).toContain("export const name = 'harness-sealed'")
+    expect(sources().get('src/sealed.ts')).toContain('tools.restrict(')
+    expect(sources().get('src/harness.ts')).toContain("'dsh-harness-dispatcher/sealed'")
+  })
+
+  it('masks only on request, so an unsealed run keeps the host it measured', () => {
+    expect(sealedRows([])).toEqual([])
+    const rows = sealedRows(['read', 'write'])
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.name).toBe('dsh-harness-dispatcher/sealed')
+    expect(rows[0]?.config).toEqual({ deny: ['read', 'write'] })
   })
 })
 
