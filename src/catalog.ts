@@ -1,17 +1,24 @@
 /**
- * The frozen catalog of Host plugin rows a Harness variant may mount.
+ * The shortcut's vocabulary: the only place a subject row is named from a fixed table.
  *
- * The catalog exists so that a Harness variant names **short, validated keys** instead of module ids a
- * model could mistype. Every entry is a Host package that ships with the runtime, so no row needs a
- * dependency of its own; `name` is resolved by the Loader against the dsh installation.
+ * ## Why a catalogue still exists now that the harness is a file
+ *
+ * It is **not** the definition of a harness any more — a harness is a row-list file (see
+ * `.agents/notes/2026-11-11-harness-shape.md`). The catalogue is what makes the *shortcut* safe:
+ * `harness: { tools: ['fs', 'fs-search'] }` has to compile into rows, and compiling by hand is where a
+ * typo would become a silently different stimulus. A fixed table turns that typo into an error.
  *
  * ## Two namespaces, and why `furnishes` exists
  *
- * A harness names **catalog keys** (`fs`, `fs-search`, …) for what it *mounts*, and **model-facing tool
- * names** (`read`, `grep`, …) for what it *breaks* via `faults[].tool`. Those are different namespaces,
- * and the failure of confusing them is silent: `faults: [{tool: 'fs', mode: 'fail'}]` matches no tool,
- * so the fault never fires and the run looks like a clean baseline. `furnishes` is what lets
- * `normalize()` reject that before a child is started.
+ * A shortcut names **catalogue keys** (`fs`, `fs-search`, …) for what it *mounts*, and **model-facing
+ * tool names** (`read`, `grep`, …) for what it *breaks* via `faults[].tool`. Those are different
+ * namespaces, and confusing them is a real failure: `faults: [{tool: 'fs', mode: 'fail'}]` matches no
+ * tool, so the fault never fires and the run looks like a clean baseline.
+ *
+ * `furnishes` is the static half of that check. It is only a *lower bound*, though: a file-based
+ * harness names rows we cannot see, so the authoritative check compares faults against the tool names
+ * observed after mounting (see [subject.ts](subject.ts)). The catalogue's job is to reject a
+ * misspelled key before anything is mounted.
  *
  * The lists below are the `defineTool({ name })` values of each package. They are a **contract with the
  * host**, so they are pinned by a redline; re-check them when `engines.dsh` moves.
@@ -19,9 +26,7 @@
  * @module dsh-harness-dispatcher/catalog
  */
 
-import type { HarnessCatalog } from './harness.ts'
-
-/** One Loader row this bench can mount into a subject composition. */
+/** One Loader row the shortcut can mount into a subject harness. */
 export interface CatalogEntry {
   /** Provider module id the Loader resolves. */
   readonly name: string
@@ -29,16 +34,16 @@ export interface CatalogEntry {
   readonly config?: Readonly<Record<string, unknown>>
   /** One sentence on what this row gives the subject, for the tool description. */
   readonly summary: string
-  /** Model-facing tool names this row makes callable. `faults[].tool` must name one of these. */
+  /** Model-facing tool names this row makes callable. */
   readonly furnishes: readonly string[]
 }
 
 /**
- * Tool rows, keyed by the short names a Harness variant uses.
+ * Tool rows, keyed by the short names a shortcut uses.
  *
  * Only file/process/search tools are here on purpose. Delegation, jobs, scheduling and skills each
  * change the *shape* of the run in ways that need their own analysis, so they are separate decisions
- * rather than part of the default subject.
+ * rather than part of the default subject. A harness that wants them says so in its own file.
  */
 export const TOOL_CATALOG: Readonly<Record<string, CatalogEntry>> = {
   fs: {
@@ -87,20 +92,26 @@ export const TOOL_CATALOG: Readonly<Record<string, CatalogEntry>> = {
  */
 export const DEFAULT_TOOLS: readonly string[] = ['fs', 'fs-search', 'pwsh']
 
-/** Persona row. Mounted only when a variant asks for one. */
+/** Persona row. Mounted only when a shortcut asks for one. */
 export const PERSONA_ROW = '@deepseek-ai/dsh-persona'
 
-/** The catalog keys this bench accepts, for validation and for the tool description. */
+/** Shipped persona prose. Changing this text changes the stimulus — the fingerprint moves with it. */
+export const PERSONAS: Readonly<Record<'terse' | 'verbose' | 'pair-programmer', string>> = {
+  terse:
+    'You are a terse engineer. Answer in as few words as possible, and never explain your plan.',
+  verbose:
+    'You are a thorough engineer. Before every tool call, state what you intend to do and why, in prose.',
+  'pair-programmer':
+    'You are pairing with a human. Narrate each step as you take it, and ask a clarifying question ' +
+    'whenever a requirement is ambiguous.',
+}
+
+/** The catalogue keys the shortcut accepts, for validation and for the tool description. */
 export const TOOL_KEYS: ReadonlySet<string> = new Set(Object.keys(TOOL_CATALOG))
 
 /**
- * Every model-facing tool name the given catalog keys make callable.
- *
- * This is the set `faults[].tool` is validated against. A fault naming anything else can never fire,
- * and a fault that can never fire is worse than no experiment: it produces a well-formed record whose
- * `harness.faults` claims a condition that was never applied.
- *
- * @param keys - catalog keys the harness mounts.
+ * Every model-facing tool name the given catalogue keys make callable.
+ * @param keys - catalogue keys the shortcut mounts.
  * @returns the furnished tool names, deduplicated.
  */
 export function furnishedTools(keys: readonly string[]): Set<string> {
@@ -112,11 +123,11 @@ export function furnishedTools(keys: readonly string[]): Set<string> {
 }
 
 /**
- * One-line catalog rendering for the model-facing tool description.
+ * One-line catalogue rendering for the model-facing tool description.
  *
- * Names the catalog key *and* the tools it furnishes, because the two namespaces are exactly where a
+ * Names the catalogue key *and* the tools it furnishes, because the two namespaces are exactly where a
  * caller goes wrong.
- * @returns keys with their summaries and furnished tool names, in catalog order.
+ * @returns keys with their summaries and furnished tool names, in catalogue order.
  */
 export function catalogLine(): string {
   return Object.entries(TOOL_CATALOG)
@@ -125,12 +136,24 @@ export function catalogLine(): string {
 }
 
 /**
- * The catalog as [harness.ts](harness.ts) consumes it, assembled once.
+ * The catalogue as [shortcut.ts](shortcut.ts) consumes it.
  *
- * Exported as a value rather than read by `normalize` directly: the spec layer stays pure data
- * validation with no host package ids, and its tests can hand it a two-entry table instead.
+ * Injected rather than imported there so the shortcut layer stays pure validation, and its tests can
+ * hand it a two-entry table instead of the host package ids.
  */
-export const HARNESS_CATALOG: HarnessCatalog = {
+export interface Vocabulary {
+  /** Catalogue keys that exist. */
+  readonly keys: ReadonlySet<string>
+  /**
+   * Model-facing tool names the given keys make callable.
+   * @param keys - catalogue keys the shortcut mounts.
+   * @returns the furnished tool names.
+   */
+  readonly furnished: (keys: readonly string[]) => ReadonlySet<string>
+}
+
+/** The real catalogue, assembled once. */
+export const CATALOG: Vocabulary = {
   keys: TOOL_KEYS,
   furnished: furnishedTools,
 }

@@ -1,29 +1,74 @@
 /**
- * One trial, one line. Plain JSONL on disk, nothing else.
+ * One run, on disk: the captured harness, the run metadata, a reader's note, and one line per trial.
  *
  * There is deliberately no query API, no aggregation and no statistics here — see
- * docs/ARCHITECTURE.md §4.4. The moment this module grows a `mean()`, the analysis口径 lives inside
- * the plugin, and the data stops being recomputable under a different one.
+ * docs/ARCHITECTURE.md §4.4. The moment this module grows a `mean()`, the analysis口径 lives inside the
+ * plugin, and the data stops being recomputable under a different one.
+ *
+ * ## Why the harness file is copied in
+ *
+ * A run directory is meant to be **self-sufficient evidence**: hand it to someone else and they can see
+ * what the subject was assembled from, and re-run it, without hunting for a file that may have moved or
+ * changed. That is why the harness is captured here verbatim rather than referenced by path.
+ *
+ * The copy is byte-identical to what was mounted, because both come from the same in-memory capture (see
+ * [harness.ts](harness.ts)). It is written under a stem that never varies — `harness.<ext>` — so tooling
+ * can find it, while the extension stays truthful so the host can parse it on replay.
+ *
+ * ## Consequence worth stating loudly
+ *
+ * The copy is **verbatim**, and a row's `config` can hold anything the plugin accepts — including
+ * credentials. So a harness file must not carry secrets: whatever is in it lands in the evidence.
  *
  * @module dsh-harness-dispatcher/record
  */
 
-import { appendFile, mkdir, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { HarnessSpec } from './harness.ts'
-import type { TraceFeatures } from './trace.ts'
+import type { Fault } from './fault.ts'
+import type { ObservedModelInput, TraceFeatures } from './fold.ts'
+import type { CapturedHarness, ResolvedHarness } from './harness.ts'
+import type { CapabilitySurface } from './subject.ts'
 
 /** Why a trial's run ended, as the subagent runtime reports it. */
 export type TrialStopReason = 'completed' | 'aborted' | 'error' | 'max-tokens' | 'refusal'
 
-/** One trial's durable record: the stimulus, the outcome, and the folded trace. */
+/** The stimulus one trial was run under, at the identity level. */
+export interface StimulusRecord {
+  /** Machine identity of the stimulus: harness digest + route + depth. Faults are outside it. */
+  readonly fingerprint: string
+  readonly harness: {
+    readonly source: CapturedHarness['source']
+    /** Absolute source path; `null` for the shortcut. */
+    readonly originPath: string | null
+    /** Captured file name inside the run directory. */
+    readonly fileName: string
+    /** Digest of the captured bytes. */
+    readonly digest: string
+  }
+  readonly route: { readonly provider: string; readonly model: string } | null
+  readonly maxDepth: number
+  readonly faults: readonly Fault[]
+}
+
+/** The task one run holds fixed. Part of the controlled input, not a variable. */
+export interface TaskRecord {
+  readonly taskId: string
+  readonly prompt: string
+  /** Initial working directory the subject was started in, when one was requested. */
+  readonly cwd: string | null
+  /** Whether a structured answer was requested. The schema itself is in the run metadata. */
+  readonly outputSchemaRequested: boolean
+}
+
+/** One trial's durable record: the stimulus, the outcome, and the two folded views. */
 export interface TrialRecord {
   /** Identity of the benchmark run this trial belongs to. */
   readonly runId: string
   /** 1-based trial index within the run. */
   readonly trial: number
-  /** The Harness variant that was applied. Two records are comparable iff these are equal. */
-  readonly harness: HarnessSpec
+  /** The harness variant that was applied. Two records are comparable iff these are equal. */
+  readonly stimulus: StimulusRecord
   /** Task identity; part of the controlled input. */
   readonly taskId: string
   /** The subject Session id, so the raw log can be found again. */
@@ -36,24 +81,32 @@ export interface TrialRecord {
   readonly wallMs: number
   /** Terminal reason. Recorded as data: a broken subject is an observation, not an exception. */
   readonly stopReason: TrialStopReason
+  /** Whether this trial ended because its own timeout fired, rather than the caller's signal. */
+  readonly timedOut: boolean
   /** Provider-authored failure detail, when the runtime supplied one. */
   readonly diagnostic: string | null
   /** The subject's final text, truncated. */
   readonly output: string
-  /** Folded trace features, or `null` when the log was already gone at settle time. */
+  /** The subject's structured answer, when the task requested a schema. */
+  readonly structured: unknown
+  /** What the subject did. `null` when the fold was already gone at settle time. */
   readonly trace: TraceFeatures | null
-  /** Set when the trace could not be read, so a missing trace is never mistaken for a zero trace. */
-  readonly traceUnavailableReason: string | null
+  /** What the subject was given. `null` under the same condition as {@link TrialRecord.trace}. */
+  readonly modelInput: ObservedModelInput | null
+  /** Set when the observations could not be read, so a missing fold is never mistaken for an empty one. */
+  readonly observationsUnavailableReason: string | null
 }
 
-/** Metadata for a freshly opened run. */
+/** Metadata for a freshly opened run. Written once as `run.json`. */
 export interface RunMeta {
   /** Run identity, also the directory name. */
   readonly runId: string
   /** When the run started, epoch milliseconds. */
   readonly startedAt: number
-  /** The task set identity, so records from different task sets are never pooled by accident. */
-  readonly taskId: string
+  /** The stimulus every trial in this run shares, at the identity level. */
+  readonly stimulus: StimulusRecord
+  /** The task every trial in this run shares, in full: the schema is here, not per trial. */
+  readonly task: TaskRecord & { readonly outputSchema: unknown }
   /** Operator's note; free text, not interpreted. */
   readonly note: string | null
 }
@@ -62,42 +115,155 @@ export interface RunMeta {
 export interface RunHandle {
   /** Run identity. */
   readonly runId: string
-  /** Directory holding the records and the run metadata. */
+  /** Directory holding the capture, the metadata and the records. */
   readonly directory: string
+  /** Absolute path of the captured harness file. */
+  readonly harnessPath: string
   /** Absolute path of the JSONL record file. */
   readonly recordPath: string
   /** Append one trial. Resolves after the line is flushed. */
   append(record: TrialRecord): Promise<void>
+  /**
+   * Record the capability surface the harness turned out to have.
+   *
+   * Written after mounting rather than in `openRun`, because it is *observed*, not declared: a field
+   * that claimed to describe the mounted harness while holding an empty placeholder would be a
+   * plausible empty result — the exact failure this repository exists to avoid.
+   * @param surface - rows, visible tools and visible skills, as probed.
+   * @returns resolves once `run.json` is rewritten.
+   */
+  annotate(surface: CapabilitySurface): Promise<void>
+  /**
+   * Remove the whole directory.
+   *
+   * Used when a run never got past its gates: a directory that exists but holds no trial is worse than
+   * no directory, because it looks like a run that found nothing.
+   * @returns resolves once the directory is gone.
+   */
+  discard(): Promise<void>
 }
 
 /**
- * Create a run directory.
+ * Record schema version.
  *
- * `w` (write, truncate) is deliberately not used and the file is created with `flag: 'a'` semantics:
- * a run id that already exists must be a caller error, because silently appending to a previous run's
- * file would mix two experiments into one file that still looks well-formed.
+ * Bumped when a field's *meaning* changes, not when one is added: a reader must be able to tell whether
+ * two files are comparable. 1 was the enum-shaped harness with `harness`/`trace` on every line; 2 is the
+ * captured-harness shape; **3 renamed `harness` to `stimulus.harness`, `assembly` to `modelInput`, and
+ * `effective` to `surface`** — same data, one vocabulary, so a 2 and a 3 file are not interchangeable by
+ * accident.
+ */
+const RECORD_SCHEMA = 3
+
+/** The note a reader finds first. Short on purpose: it answers "which field do I compare?" */
+const README = `This directory is one benchmark run.
+
+  run.json        run identity, the stimulus every trial shared, the task, and the
+                  capability surface the harness actually mounted with.
+  harness.*       a verbatim copy of the harness under test. Re-running this run is
+                  passing this file as harness.file.
+  trials.jsonl    one JSON line per trial: stimulus, outcome, and two folded views.
+
+How to read it
+  1. Compare runs by stimulus.fingerprint, never by file names. Two runs with the
+     same fingerprint applied the same harness on the same route; two with different
+     fingerprints did not, whatever their file names say.
+  2. trace says what the subject DID.  modelInput says what it WAS GIVEN.
+  3. Both are facts, not scores. This plugin computes no statistics: group and average
+     them outside, with whatever method your study needs.
+
+A harness file is copied verbatim into this directory, so never put credentials in one.
+`
+
+/**
+ * Create a run directory and capture the harness into it.
+ *
+ * `w` (write, truncate) is deliberately not used and every file is created with `wx`: a run id that
+ * already exists must be a caller error, because silently appending to a previous run's file would mix
+ * two experiments into one file that still looks well-formed.
  *
  * @param root - parent directory for run directories.
  * @param meta - run metadata; written once as `run.json`.
+ * @param captured - the harness, captured once; its `text` is what lands on disk.
  * @returns the handle used to append trial records.
  */
-export async function openRun(root: string, meta: RunMeta): Promise<RunHandle> {
+export async function openRun(
+  root: string,
+  meta: RunMeta,
+  captured: CapturedHarness,
+): Promise<RunHandle> {
   const directory = join(root, meta.runId)
-  await mkdir(directory, { recursive: true })
+  const harnessPath = join(directory, captured.fileName)
   const recordPath = join(directory, 'trials.jsonl')
-  // `wx` fails when the file exists — the guard against collapsing two runs into one file.
-  await writeFile(recordPath, '', { flag: 'wx' })
-  await writeFile(
-    join(directory, 'run.json'),
-    `${JSON.stringify({ ...meta, recordSchema: 1 }, null, 2)}\n`,
-    'utf8',
-  )
+  const metaPath = join(directory, 'run.json')
+  const existedBefore = await isDirectory(directory)
+  await mkdir(directory, { recursive: true })
+
+  try {
+    // The capture goes down first: from here on, the directory is the record of what ran.
+    await writeFile(harnessPath, captured.text, { flag: 'wx' })
+    // `wx` fails when the file exists — the guard against collapsing two runs into one file.
+    await writeFile(recordPath, '', { flag: 'wx' })
+    await writeFile(
+      metaPath,
+      `${JSON.stringify({ ...meta, recordSchema: RECORD_SCHEMA }, null, 2)}\n`,
+      {
+        flag: 'wx',
+      },
+    )
+    await writeFile(join(directory, 'README.txt'), README, { flag: 'wx' })
+  } catch (error) {
+    // Only remove what this call created; a pre-existing directory belongs to someone else.
+    if (!existedBefore) await rm(directory, { recursive: true, force: true })
+    throw error
+  }
+
   return {
     runId: meta.runId,
     directory,
+    harnessPath,
     recordPath,
     async append(record: TrialRecord): Promise<void> {
       await appendFile(recordPath, `${JSON.stringify(record)}\n`, 'utf8')
     },
+    async annotate(surface: CapabilitySurface): Promise<void> {
+      const written = { ...meta, surface, recordSchema: RECORD_SCHEMA }
+      await writeFile(metaPath, `${JSON.stringify(written, null, 2)}\n`, 'utf8')
+    },
+    async discard(): Promise<void> {
+      await rm(directory, { recursive: true, force: true })
+    },
+  }
+}
+
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Project the resolved harness into its record form.
+ * @param harness - the resolved harness.
+ * @param faults - the faults applied for the whole run.
+ * @returns the identity-level stimulus.
+ */
+export function stimulusRecord(harness: ResolvedHarness, faults: readonly Fault[]): StimulusRecord {
+  const captured = harness.captured
+  return {
+    fingerprint: harness.fingerprint,
+    harness: {
+      source: captured.source,
+      originPath: captured.source === 'file' ? captured.originPath : null,
+      fileName: captured.fileName,
+      digest: captured.digest,
+    },
+    route:
+      harness.route.provider === null || harness.route.model === null
+        ? null
+        : { provider: harness.route.provider, model: harness.route.model },
+    maxDepth: harness.maxDepth,
+    faults,
   }
 }

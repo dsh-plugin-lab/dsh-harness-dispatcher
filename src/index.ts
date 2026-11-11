@@ -1,111 +1,127 @@
 /**
- * Plugin entry: the Host half of the benchmark dispatcher.
+ * Plugin entry: the Host half of the harness bench.
  *
- * Mounts three things and nothing else:
- *   1. the `run_benchmark` tool,
- *   2. the fault gate's three tool-pipeline listeners (inert until a trial arms them),
- *   3. the trace collector's committed-event listener (inert for unarmed sessions),
- * plus a system-prompt section that appears only when the tool is visible in that agent's scope.
+ * Mounts three tools, one skill, and two inert listeners, and nothing else:
+ *
+ *   1. `harness_inspect` — mount a harness, report what it would give the subject, spend nothing;
+ *   2. `harness_export` — write a shipped preset's rows out as an editable harness file;
+ *   3. `harness_run` — run one task N times against one harness, record every trial;
+ *   4. the usage skill, so an agent finds the loop and its traps without reading source;
+ *   5. the fault gate's three tool-pipeline listeners (inert until a trial arms them);
+ *   6. the fold collector's committed-event listener (inert for unarmed sessions);
+ *
+ * plus a system-prompt section that appears only when those tools are visible in that agent's scope.
  *
  * @module dsh-harness-dispatcher
  */
 
-import z from '@deepseek-ai/schemastery'
 import type { Context } from '@deepseek-ai/cordis'
-import { join } from 'node:path'
-import { homedir } from 'node:os'
-import { DEFAULT_TOOLS, TOOL_KEYS } from './catalog.ts'
+import { CATALOG, TOOL_KEYS } from './catalog.ts'
+import { FoldCollector } from './collector.ts'
+import { Config, resolveConfig } from './config.ts'
+import type { Config as PluginConfig } from './config.ts'
 import { FaultGate } from './gate.ts'
-import { TraceCollector } from './observe.ts'
-import { registerRunBenchmark } from './tools/run-benchmark.ts'
+import { registerSkill } from './skill.ts'
+import { registerHarnessExport } from './tools/harness-export.ts'
+import { registerHarnessInspect } from './tools/harness-inspect.ts'
+import { registerHarnessRun } from './tools/harness-run.ts'
 
 export const name = 'harness-dispatcher'
 
+export { Config }
+export type { PluginConfig }
+
 /**
- * All five are hard dependencies on purpose. A bench that silently degraded when one was missing would
+ * All four are hard dependencies on purpose. A bench that silently degraded when one was missing would
  * still produce records — records that were measured against nothing.
  *
- * `tools` registers the tool; `agentPresets` mounts the subject composition; `subagents` starts it;
- * `sessions` is the store the subject's Session is created in; `systemPrompt` carries the guidance.
+ * `tools` registers the tools; `agentPresets` mounts and audits the harness; `subagents` starts the
+ * subject; `systemPrompt` carries the guidance.
  *
- * Note: the trace is folded from `session/event`, which needs no service — the collector borrows the
- * same context.
+ * `skills` is deliberately **not** injected: the usage skill is registered when the host has a skill
+ * registry and skipped with a log line when it does not, and the capability surface reports
+ * `skills: null` in that case. Making it required would refuse to load this plugin in a profile that
+ * ships no skills, for something that is helpful rather than load-bearing.
  */
 export const inject = ['tools', 'agentPresets', 'subagents', 'systemPrompt']
 
-/** Plugin configuration. */
-export interface Config {
-  /** Directory that receives one subdirectory per benchmark run. Empty means the default under home. */
-  outputRoot: string
-  /** Catalog keys a harness offers when it names none. */
-  defaultTools: string[]
-  /** Delegation budget granted to a subject when a harness names none. */
-  defaultMaxDepth: number
-  /** Upper bound on trials per call, so one tool call cannot monopolise the host. */
-  maxTrials: number
-}
-
-export const Config: z<Config> = z.object({
-  outputRoot: z.string().default(''),
-  defaultTools: z.array(z.string()).default([...DEFAULT_TOOLS]),
-  defaultMaxDepth: z.natural().min(1).default(1),
-  maxTrials: z.natural().min(1).max(50).default(10),
-})
+/** Number of the current private mount, so two inspections cannot share a preset id. */
+let mountCounter = 0
 
 /**
  * Install the bench.
  * @param ctx - the plugin's context.
  * @param config - resolved plugin configuration.
  */
-export function apply(ctx: Context, config: Config): void {
-  const outputRoot =
-    config.outputRoot.trim() === ''
-      ? join(homedir(), '.dsh', 'harness-dispatcher', 'runs')
-      : config.outputRoot
+export function apply(ctx: Context, config: PluginConfig): void {
+  const resolved = resolveConfig(config)
 
   // Fail at load, not at run time: a default tool key that does not exist would otherwise surface as a
-  // malformed subject composition after a child had already been started.
+  // malformed harness after a child had already been started.
   //
   // `TOOL_KEYS.has()`, not the `in` operator: `in` tests property names on the Set object itself, so
   // `'fs' in TOOL_KEYS` is always false and every key would be rejected. Caught by installing the
   // plugin — the type checker and the unit tests cannot see the difference.
-  for (const tool of config.defaultTools) {
-    if (!TOOL_KEYS.has(tool)) {
-      throw new Error(`harness-dispatcher: defaultTools names an unknown catalog key "${tool}"`)
+  for (const key of resolved.defaultTools) {
+    if (!TOOL_KEYS.has(key)) {
+      throw new Error(`harness-dispatcher: defaultTools names an unknown catalogue key "${key}"`)
     }
   }
 
   const gate = new FaultGate()
   gate.attach(ctx)
-  const collector = new TraceCollector()
+  const collector = new FoldCollector()
   collector.attach(ctx)
 
-  registerRunBenchmark(ctx, {
+  const defaults = {
+    tools: resolved.defaultTools,
+    maxDepth: resolved.defaultMaxDepth,
+    harnessDir: resolved.harnessDir,
+  }
+
+  registerHarnessRun(ctx, {
     presets: ctx.agentPresets,
     subagents: ctx.subagents,
     gate,
     collector,
-    config: {
-      outputRoot,
-      defaultTools: config.defaultTools,
-      defaultMaxDepth: config.defaultMaxDepth,
-      maxTrials: config.maxTrials,
+    defaults,
+    vocabulary: CATALOG,
+    limits: {
+      outputRoot: resolved.outputRoot,
+      maxTrials: resolved.maxTrials,
+      trialTimeoutMs: resolved.trialTimeoutMs,
     },
   })
 
-  // Guidance, scoped: an agent that cannot see `run_benchmark` gets no text about it.
+  registerHarnessInspect(ctx, {
+    defaults,
+    vocabulary: CATALOG,
+    nextId: () => `inspect-${String((mountCounter += 1))}`,
+  })
+
+  registerHarnessExport(ctx, { harnessDir: resolved.harnessDir })
+
+  registerSkill(ctx)
+
+  // Guidance, scoped: an agent that cannot see the tools gets no text about them. It states the loop and
+  // points at the skill, because the two traps a caller cannot infer from a tool list are documented
+  // there.
   ctx.systemPrompt.section({
-    name: 'tool:run_benchmark',
+    name: 'tool:harness_run',
     order: ctx.systemPrompt.getSectionOrder('TOOL_SUBAGENT'),
     text: (context) => {
-      if (ctx.tools.get('run_benchmark', context.scope) === undefined) return ''
+      if (ctx.tools.get('harness_run', context.scope) === undefined) return ''
       return (
-        'To compare harnesses, hold the task fixed and call `run_benchmark` once per harness ' +
-        'variant with the same `task_id` and `prompt`. Never change the task between variants — the ' +
-        'only variable is the `harness` argument.'
+        'To compare harnesses, hold the task fixed and call `harness_run` once per harness with the ' +
+        'same `task_id` and `prompt` — the only variable is the harness argument. Both `harness_inspect` ' +
+        'and `harness_export` are free (no agent, no tokens): inspect before running, and export a ' +
+        'shipped preset to start from a harness that already mounts. Load the `dsh-harness-bench` ' +
+        'skill for the loop and the two tool-name namespaces.'
       )
     },
   })
 
-  ctx.logger.info(`harness-dispatcher: records → ${outputRoot}`)
+  ctx.logger.info(
+    `harness-dispatcher: records → ${resolved.outputRoot}; harness files → ${resolved.harnessDir}`,
+  )
 }

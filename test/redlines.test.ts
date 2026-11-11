@@ -12,11 +12,14 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_TOOLS, TOOL_CATALOG, TOOL_KEYS } from '../src/catalog.ts'
-import { HarnessSpecError, normalize } from '../src/harness.ts'
-import { harnessPresetId, harnessRows } from '../src/preset-rows.ts'
-import { emptyTrace, finishTrace, foldEvent, summarize } from '../src/trace.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { CATALOG, DEFAULT_TOOLS, TOOL_CATALOG, TOOL_KEYS } from '../src/catalog.ts'
+import { foldEvent, emptyFold, finishFold, summarize } from '../src/fold.ts'
+import { normalizeFaults } from '../src/fault.ts'
+import { harnessRows, harnessLabel } from '../src/harness.ts'
+import { normalizeShortcut, shortcutRows } from '../src/shortcut.ts'
+import { SKILL_NAME } from '../src/skill.ts'
+import { presetIdFor } from '../src/subject.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
 
@@ -38,35 +41,32 @@ function sources(): Map<string, string> {
   return files
 }
 
-const DEFAULTS = { tools: ['fs'], maxDepth: 1 }
-// A two-namespace table: catalog key → the model-facing tool names it furnishes. Kept small on
-// purpose — the redline is about the *rule*, and the real table is pinned separately by B1.
-const FURNISHED: Record<string, string[]> = {
-  fs: ['read', 'write', 'edit'],
-  'fs-search': ['grep', 'glob'],
-  pwsh: ['pwsh'],
-}
-const KNOWN = {
-  keys: new Set(Object.keys(FURNISHED)),
-  furnished: (keys: readonly string[]) => new Set(keys.flatMap((key) => FURNISHED[key] ?? [])),
-}
+const DEFAULTS = { tools: ['fs'] }
 
-describe('B1 — the catalog is the only tool vocabulary', () => {
-  it('every default tool is a real catalog key', () => {
+describe('B1 — the catalogue is the only place a row is named', () => {
+  it('every default tool is a real catalogue key', () => {
     // This is the rule that a load-time check once violated: `'fs' in TOOL_KEYS` is always false on a
     // Set, so the plugin refused to activate while every test stayed green.
     for (const key of DEFAULT_TOOLS) expect(TOOL_KEYS.has(key), key).toBe(true)
   })
 
-  it('a harness naming an unknown tool is rejected, never silently skipped', () => {
-    // Silent skipping is the worst outcome: it yields a plausible empty experiment.
-    expect(() => normalize({ tools: ['fs', 'wite'] }, DEFAULTS, KNOWN)).toThrow(HarnessSpecError)
+  it('answers `has` for every catalogue key and for no other string', () => {
+    for (const key of Object.keys(TOOL_CATALOG)) expect(TOOL_KEYS.has(key)).toBe(true)
+    expect(TOOL_KEYS.has('wite')).toBe(false)
+    // Guards the exact bug: the `in` operator answers differently, so assert the trap stays shut.
+    expect(Object.hasOwn(TOOL_KEYS, 'fs')).toBe(false)
   })
 
-  it('the source mounts tool rows only through the catalog', () => {
+  it('rejects an unknown shortcut key instead of silently shrinking the subject', () => {
+    expect(() => normalizeShortcut({ tools: ['fs', 'wite'] }, DEFAULTS, CATALOG)).toThrow(
+      /unknown tool/,
+    )
+  })
+
+  it('the source mounts tool rows only through the catalogue', () => {
     for (const [file, text] of sources()) {
-      // A hard-coded provider module id outside the catalog would let a row bypass validation.
-      if (file === 'src/catalog.ts') continue
+      // A hard-coded provider module id outside catalog.ts would let a row bypass validation.
+      if (file.endsWith('catalog.ts')) continue
       const matches = text.match(/['"]@deepseek-ai\/dsh-tool-[a-z-]+['"]/g) ?? []
       expect(matches, `${file} hard-codes a tool module id; add it to catalog.ts instead`).toEqual(
         [],
@@ -78,27 +78,19 @@ describe('B1 — the catalog is the only tool vocabulary', () => {
 describe('B2 — the three fault modes stay three distinct experiments', () => {
   it('accepts exactly deny, fail and latency', () => {
     for (const mode of ['deny', 'fail', 'latency'] as const) {
-      expect(normalize({ faults: [{ tool: 'read', mode }] }, DEFAULTS, KNOWN).faults[0]?.mode).toBe(
-        mode,
-      )
+      expect(normalizeFaults([{ tool: 'read', mode }])[0]?.mode).toBe(mode)
     }
-    expect(() =>
-      normalize({ faults: [{ tool: 'read', mode: 'error' as 'fail' }] }, DEFAULTS, KNOWN),
-    ).toThrow(/must be one of/)
+    expect(() => normalizeFaults([{ tool: 'read', mode: 'error' as 'fail' }])).toThrow(
+      /must be one of/,
+    )
   })
 
   it('refuses contradictory faults on one tool rather than letting the last win', () => {
     expect(() =>
-      normalize(
-        {
-          faults: [
-            { tool: 'read', mode: 'deny' },
-            { tool: 'read', mode: 'fail' },
-          ],
-        },
-        DEFAULTS,
-        KNOWN,
-      ),
+      normalizeFaults([
+        { tool: 'read', mode: 'deny' },
+        { tool: 'read', mode: 'fail' },
+      ]),
     ).toThrow(/contradictory/)
   })
 
@@ -120,47 +112,73 @@ describe('B3 — no statistics, ever, in this process', () => {
     const banned =
       /\b(mean|average|median|percentile|stddev|variance|confidenceInterval|pValue|p_value)\b/i
     for (const [file, text] of sources()) {
-      // Strip comments first: a comment explaining why we do not average is not a violation.
-      const code = text.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/\/\/.*$/gm, '')
       expect(
-        banned.test(code),
+        banned.test(stripProse(text)),
         `${file} computes a statistic; that belongs outside this repository`,
       ).toBe(false)
     }
   })
 
   it('the record schema carries no aggregate field', () => {
-    const record = sources().get('src/record.ts')
-    expect(record).toBeDefined()
+    const code = stripProse(sources().get('src/record.ts') ?? '')
     for (const field of ['mean', 'average', 'rate', 'score', 'pValue']) {
-      expect(record, `record.ts must not declare "${field}"`).not.toContain(`${field}:`)
+      expect(code, `record.ts must not declare "${field}"`).not.toContain(`${field}:`)
     }
   })
 })
 
+/** Remove comments so prose that *states* a rule is not mistaken for code that breaks it. */
+function stripComments(text: string): string {
+  return text.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/\/\/.*$/gm, '')
+}
+
+/**
+ * Remove comments *and* the contents of plain string literals.
+ *
+ * The rules about statistics and credentials are about what the code *does*, and this plugin also ships
+ * prose: a record-directory README that says "group and average them outside" is stating the rule, not
+ * breaking it. Stripping literals keeps those rules strict about code without banning a word from
+ * documentation.
+ */
+function stripProse(text: string): string {
+  return stripComments(text)
+    .replaceAll(/'[^'\n]*'/g, "''")
+    .replaceAll(/"[^"\n]*"/g, '""')
+    .replaceAll(/`[^`]*`/g, '``')
+}
+
 describe('B4 — a record holds facts, and no secrets', () => {
   it('declares no credential, token or prompt-body field', () => {
-    const record = sources().get('src/record.ts')
-    expect(record).toBeDefined()
+    const code = stripProse(sources().get('src/record.ts') ?? '')
+    expect(code).not.toBe('')
     for (const field of ['apiKey', 'api_key', 'token:', 'credential', 'secret', 'authorization']) {
-      expect(record, `record.ts must not declare "${field}"`).not.toContain(field)
+      expect(code, `record.ts must not declare "${field}"`).not.toContain(field)
     }
   })
 
+  it('digests the prompt instead of storing it', () => {
+    // The model-input view must carry a length and a digest, not the text: a record is evidence, not a
+    // transcript, and an unbounded field grows without limit across trials.
+    const fold = sources().get('src/fold.ts') ?? ''
+    expect(fold).toMatch(/digestText\(text\)/)
+    expect(fold).toMatch(/chars:\s*text\.length/)
+  })
+
+  it('warns a reader that the captured harness is verbatim', () => {
+    // The copy lands in the evidence directory, so the directory itself has to say so.
+    const record = sources().get('src/record.ts') ?? ''
+    expect(record).toMatch(/never put credentials/i)
+  })
+
   it('truncates the subject output rather than storing a transcript', () => {
-    // Records are evidence, not conversations. An unbounded field grows without limit across trials.
-    const text = sources().get('src/text.ts')
-    expect(text).toMatch(/MAX_OUTPUT\s*=\s*\d{3,}/)
+    expect(sources().get('src/text.ts')).toMatch(/MAX_OUTPUT\s*=\s*\d{3,}/)
   })
 })
 
 describe("B5 — the fault gate changes nobody else's behaviour", () => {
   it('an idle gate returns the downstream decision untouched', () => {
-    // Read from source: every listener must call `next()` when no subject is armed, so an unarmed
-    // bench is a no-op rather than a policy change.
-    const gate = sources().get('src/gate.ts')
-    expect(gate).toBeDefined()
-    const occurrences = gate?.match(/return next\(\)/g) ?? []
+    const gate = sources().get('src/gate.ts') ?? ''
+    const occurrences = gate.match(/return next\(\)/g) ?? []
     expect(
       occurrences.length,
       'each of the three stages must delegate when unarmed',
@@ -168,41 +186,49 @@ describe("B5 — the fault gate changes nobody else's behaviour", () => {
   })
 
   it('arms by Session id, so overlapping trials cannot disarm each other', () => {
-    const gate = sources().get('src/gate.ts')
+    const gate = sources().get('src/gate.ts') ?? ''
     expect(gate).toContain('Map<string, ArmedSubject>')
     expect(gate).toContain('this.armed.get(sessionId) === subject')
   })
 })
 
 describe('B6 — a run leaves nothing behind', () => {
-  it('scopes the preset id to the run', () => {
-    // A process-global duplicate preset id makes the second concurrent run fail to mount.
-    expect(harnessPresetId('run-a')).not.toBe(harnessPresetId('run-b'))
-    expect(harnessPresetId('run-a')).toContain('run-a')
+  it('scopes the preset id to its owner', () => {
+    expect(presetIdFor('run-a')).not.toBe(presetIdFor('run-b'))
+    expect(presetIdFor('run-a')).toContain('run-a')
   })
 
-  it('unmounts the preset in a finally block', () => {
-    const tool = sources().get('src/tools/run-benchmark.ts')
-    expect(tool).toBeDefined()
+  it('removes a run directory that never reached its first trial', () => {
+    // The alternative is a directory holding no trial, which is indistinguishable from a run whose
+    // subject did nothing — a plausible empty result.
+    expect(sources().get('src/tools/harness-run.ts')).toMatch(
+      /if \(!started\)\s*await run\.discard\(\)/,
+    )
+  })
+
+  it('keeps a partially recorded run and says so', () => {
+    // A cancelled run has usually already written data. Deleting it would destroy the experiment;
+    // failing silently would look like it was lost.
+    const tool = sources().get('src/tools/harness-run.ts') ?? ''
+    expect(tool).toMatch(/the directory is kept, it is data/)
+  })
+
+  it('unmounts the harness and disposes the activation in a finally block', () => {
+    const tool = sources().get('src/tools/harness-run.ts') ?? ''
+    const trial = sources().get('src/trial.ts') ?? ''
     expect(tool).toMatch(/\}\s*finally\s*\{/)
-    expect(tool).toContain('unmount()')
-  })
-
-  it('disposes the activation in a finally block, inside the trial loop', () => {
-    const tool = sources().get('src/tools/run-benchmark.ts')
-    expect(tool?.match(/activation\.dispose\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(1)
+    expect(tool).toContain('subject.dispose()')
+    expect(trial).toMatch(/activation\.dispose\(\)/)
   })
 
   it('refuses to reuse an existing run directory', () => {
-    // Silent appending would mix two experiments into one file that still parses.
-    const record = sources().get('src/record.ts')
-    expect(record).toContain("flag: 'wx'")
+    expect(sources().get('src/record.ts')).toContain("flag: 'wx'")
   })
 })
 
 describe('B7 — a missing measurement is recorded as missing, not as zero', () => {
   it('leaves usage null when the adapter reported nothing', () => {
-    const features = summarize([
+    const observations = summarize([
       {
         type: 'assistant/message',
         seq: 1,
@@ -210,7 +236,7 @@ describe('B7 — a missing measurement is recorded as missing, not as zero', () 
         data: { turn: 1, step: 1, message: { role: 'assistant', content: [] }, stream: [] },
       } as unknown as SessionEvent,
     ])
-    expect(features.usage).toBeNull()
+    expect(observations.trace.usage).toBeNull()
   })
 
   it('counts unreported settlements alongside the totals', () => {
@@ -234,7 +260,7 @@ describe('B7 — a missing measurement is recorded as missing, not as zero', () 
         data: { turn: 1, step: 1, message: { role: 'assistant', content: [] }, stream: [] },
       },
     ] as unknown as SessionEvent[]
-    expect(summarize(events).usage).toEqual({
+    expect(summarize(events).trace.usage).toEqual({
       inputTokens: 5,
       outputTokens: 6,
       cacheReadTokens: 0,
@@ -243,36 +269,81 @@ describe('B7 — a missing measurement is recorded as missing, not as zero', () 
     })
   })
 
-  it('attributes a tool error to the tool that issued the call', () => {
-    // Attributing it to the result would blame nobody, since a result carries only a call id.
-    const events = [
+  it('distinguishes a cleared prompt from a missing one', () => {
+    // "No system prompt" and "the prompt arrived once" are different inputs; a fold that skipped the
+    // empty event would silently report the earlier text.
+    const observations = summarize([
       {
-        type: 'tool/call',
+        type: 'system/message',
         seq: 1,
         time: 1,
-        data: { turn: 1, step: 1, callId: 'c1', name: 'read', arguments: '{}' },
-      },
-      {
-        type: 'tool/result',
-        seq: 2,
-        time: 2,
-        data: {
-          turn: 1,
-          step: 1,
-          message: { role: 'tool', toolCallId: 'c1', content: [], isError: true },
-        },
-      },
-    ] as unknown as SessionEvent[]
-    expect(summarize(events).byTool.read).toEqual({ calls: 1, errors: 1 })
+        data: { turn: 1, step: 1, message: { role: 'system', content: [] } },
+      } as unknown as SessionEvent,
+    ])
+    expect(observations.modelInput.systemPrompt).toBeNull()
+    expect(observations.modelInput.systemPromptUpdates).toBe(1)
   })
 
   it('agrees between the live fold and the offline fold', () => {
     const events = [
       { type: 'turn/end', seq: 1, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
     ] as unknown as SessionEvent[]
-    const state = emptyTrace()
+    const state = emptyFold()
     for (const event of events) foldEvent(state, event)
-    expect(finishTrace(state)).toEqual(summarize(events))
+    expect(finishFold(state)).toEqual(summarize(events))
+  })
+})
+
+describe('B8 — the harness is captured, and the capture is what mounts', () => {
+  it('mounts the run-directory copy, never the operator file', () => {
+    // If the origin were mounted, an edit between the read and the mount would leave a record whose
+    // digest describes a harness that never ran.
+    const tool = sources().get('src/tools/harness-run.ts') ?? ''
+    expect(tool).toMatch(/harnessRows\([\s\S]{0,200}?run\.harnessPath/)
+    expect(tool).not.toMatch(/harnessRows\([\s\S]{0,200}?originPath/)
+  })
+
+  it('writes the captured text, so the copy is byte-identical to what mounts', () => {
+    expect(sources().get('src/record.ts')).toMatch(/writeFile\(harnessPath,\s*captured\.text/)
+  })
+
+  it('hands a file harness to the host instead of parsing it', () => {
+    // We must not own a second definition of "a harness": a file passing our parser but failing the
+    // Loader (or the reverse) would be a disagreement nothing could resolve.
+    const rows = harnessRows(
+      {
+        source: 'file',
+        originPath: '/a/b.yml',
+        fileName: 'harness.yml',
+        text: '- name: x\n',
+        digest: '00000000',
+      },
+      '/run/harness.yml',
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.name).toBe('cordis:include')
+  })
+
+  it('imports no YAML parser of its own', () => {
+    // The corollary of the previous test: a parser here would be the second definition.
+    for (const [file, text] of sources()) {
+      expect(text, `${file} must not parse the Loader dialect itself`).not.toMatch(
+        /from ['"](js-yaml|yaml)['"]/,
+      )
+    }
+  })
+
+  it('labels the mounted harness so a record can be traced back', () => {
+    expect(
+      harnessLabel({
+        source: 'shortcut',
+        fileName: 'harness.json',
+        text: '',
+        digest: '00000000',
+        rows: [],
+        spec: { tools: ['fs'], persona: null, personaVariant: 'none' },
+      }),
+    ).toContain('tools=fs')
   })
 })
 
@@ -280,8 +351,7 @@ describe('B9 — local `check` is the same command as CI', () => {
   /**
    * The rule: if `pnpm run check` is green, CI must be green. It was violated once — `check` ran
    * typecheck / build / test, while CI also ran `lint` and `format:check`. Hand-edited source went in
-   * unformatted, the local suite stayed green, and the push went red. That is the most expensive kind
-   * of false green: it is only discovered after the work is already published.
+   * unformatted, the local suite stayed green, and the push went red.
    */
   const scripts = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
     scripts: Record<string, string>
@@ -289,7 +359,6 @@ describe('B9 — local `check` is the same command as CI', () => {
 
   it('runs every step the CI workflow runs', () => {
     const check = scripts.scripts.check ?? ''
-    // These are exactly the `run:` steps of .github/workflows/ci.yml's verify job.
     for (const step of ['typecheck', 'build', 'test', 'lint', 'format:check']) {
       expect(check, `check must run "${step}" — CI does`).toContain(`pnpm run ${step}`)
     }
@@ -300,7 +369,6 @@ describe('B9 — local `check` is the same command as CI', () => {
     const ci = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')
     const check = scripts.scripts.check ?? ''
     const steps = [...ci.matchAll(/^\s+- run: pnpm run ([a-z:-]+)$/gm)].map((match) => match[1])
-    // A step present in CI but not in `check` is a step whose failure is discovered after pushing.
     const missing = steps.filter(
       (step) =>
         step !== 'typecheck' &&
@@ -314,40 +382,182 @@ describe('B9 — local `check` is the same command as CI', () => {
   })
 })
 
-describe('B8 — the harness declares its own composition', () => {
-  it('puts the persona row before every tool row', () => {
-    // Load order is semantics: the persona must exist before the system prompt is assembled.
-    const rows = harnessRows({
-      id: 'x',
-      fingerprint: 'ffffffff',
-      tools: ['fs', 'pwsh'],
-      persona: 'be terse',
-      faults: [],
-      route: { provider: null, model: null },
-      maxDepth: 1,
-    })
-    expect(rows[0]?.id).toBe('bench-persona')
-    expect(rows.slice(1).every((row) => row.id.startsWith('bench-tool-'))).toBe(true)
+describe('B10 — the mount diagnostic is read back, once', () => {
+  /**
+   * The rule that motivated the rewrite. `agentPresets.register()` **resolves even when the mount
+   * failed** — it keeps the diagnosis in its own record and warns. A bench that does not read it back
+   * starts a child against a preset that does not exist, fails there, and leaves an empty
+   * `trials.jsonl` behind: a plausible empty result, which is the worst outcome an experiment can have.
+   */
+  it('asks the registry whether the harness is usable', () => {
+    const subject = sources().get('src/subject.ts') ?? ''
+    expect(subject).toContain('.broken')
+    expect(subject).toMatch(/presets\.resolve\(/)
   })
 
-  it('never mounts a row the catalog does not name', () => {
-    for (const key of Object.keys(TOOL_CATALOG)) {
-      const rows = harnessRows({
-        id: 'x',
-        fingerprint: 'ffffffff',
-        tools: [key],
-        persona: null,
-        faults: [],
-        route: { provider: null, model: null },
-        maxDepth: 1,
-      })
-      expect(rows[0]?.name).toBe(TOOL_CATALOG[key]?.name)
+  it('routes every mount through the one audited path', () => {
+    // Two mount sites would mean two chances to forget the read-back.
+    for (const file of ['src/tools/harness-run.ts', 'src/tools/harness-inspect.ts']) {
+      const text = sources().get(file) ?? ''
+      expect(text, `${file} must mount through mountSubject`).toContain('mountSubject(')
+      expect(text, `${file} must not register a preset directly`).not.toContain('presets.register(')
     }
   })
 
-  it('requires a delegation budget that can actually start the subject', () => {
-    // The deployment profile sets `subagent.maxDepth: 0`; inheriting it would make every subject
-    // unstartable, and the failure would surface as "no records" rather than as a config error.
-    expect(() => normalize({ maxDepth: 0 }, DEFAULTS, KNOWN)).toThrow(/at least 1/)
+  it('rejects a harness that mounts but offers nothing', () => {
+    // A harness with no callable tool is not a subject; running it would record a subject that could not
+    // act, and the record would look like a behaviour rather than a configuration error.
+    expect(sources().get('src/subject.ts')).toContain('makes no tool callable')
+  })
+})
+
+describe('B11 — an inspection can reach a preset without exporting it', () => {
+  it('reads a preset through a scope lease, not a private mount', () => {
+    // The first question a newcomer has is "what does `standard` actually give the subject?". Requiring
+    // an export first is friction with no purpose, so inspection accepts a preset id directly.
+    const inspect = sources().get('src/tools/harness-inspect.ts') ?? ''
+    expect(inspect).toContain('surfaceOf(')
+    expect(inspect).toContain('preset')
+  })
+
+  it('validates the route without a model call', () => {
+    // An inspection that says ok and a run that fails on trial 1 is a broken promise.
+    const inspect = sources().get('src/tools/harness-inspect.ts') ?? ''
+    expect(inspect).toContain('resolveModelInfo')
+  })
+})
+
+describe('B12 — the tools teach their own use', () => {
+  it('registers a skill, from code rather than a directory someone must configure', () => {
+    // A filesystem skill is invisible in any preset whose skill provider does not point at it — a dead
+    // pointer that fails silently. The registration is code so it does not depend on a profile edit.
+    expect(sources().get('src/skill.ts')).toContain('skills.register(')
+    expect(SKILL_NAME).toBe('dsh-harness-bench')
+  })
+
+  it('treats the skill registry as optional', () => {
+    // A profile without skills must still get a working bench.
+    const skill = sources().get('src/skill.ts') ?? ''
+    expect(skill).toContain("ctx.get('skills')")
+    expect(skill).toContain('return false')
+  })
+
+  it('documents the two namespaces and the field to compare', () => {
+    const skill = sources().get('src/skill.ts') ?? ''
+    // Each of these is a trap that costs a real experiment when missed.
+    expect(skill).toMatch(/CATALOGUE KEYS/)
+    expect(skill).toMatch(/MODEL-FACING TOOL NAMES/)
+    expect(skill).toMatch(/fingerprint/)
+  })
+
+  it('keeps the skill body under the host prune threshold', () => {
+    // Above 8192 characters the standard preset's tool-result pruner trims the skill body.
+    const skill = sources().get('src/skill.ts') ?? ''
+    const body = skill.slice(skill.indexOf('const CONTENT = `'), skill.indexOf('`\n\n/**'))
+    expect(body.length).toBeLessThan(8192)
+  })
+})
+
+describe('B13 — the vocabulary is one word per thing', () => {
+  it('says harness, shortcut, surface and modelInput — not the retired synonyms', () => {
+    // A renamed concept that leaves a synonym behind is two names for one thing, which is how a record
+    // and a reader come to disagree about what a field means.
+    const retired = [
+      ['quick', /\bquick\b/],
+      ['composition (as a type)', /\bComposition\b/],
+      ['effective', /\beffective\b/],
+      ['assembly (as a field)', /\bassembly\b/],
+      ['TrialFacts', /\bTrialFacts\b/],
+    ] as const
+    for (const [file, text] of sources()) {
+      const code = stripComments(text)
+      // `express`/`assemble` fragments would trip a naive word match; these are word boundaries.
+      for (const [word, pattern] of retired) {
+        expect(pattern.test(code), `${file} still says "${word}"`).toBe(false)
+      }
+    }
+  })
+
+  it('keeps the three tools on one prefix so a catalogue groups them', () => {
+    for (const tool of ['harness_inspect', 'harness_export', 'harness_run']) {
+      const found = [...sources().values()].some((text) => text.includes(`name: '${tool}'`))
+      expect(found, `no tool is registered as ${tool}`).toBe(true)
+    }
+    // The old names must be gone, or a caller following stale docs gets an unknown-tool error.
+    for (const [file, text] of sources()) {
+      for (const stale of ['run_benchmark', 'harness_check', 'harness_dump']) {
+        expect(text.includes(`name: '${stale}'`), `${file} still registers ${stale}`).toBe(false)
+      }
+    }
+  })
+
+  it('names the record fields after the two views', () => {
+    const record = sources().get('src/record.ts') ?? ''
+    expect(record).toContain('readonly trace:')
+    expect(record).toContain('readonly modelInput:')
+    expect(record).toContain('readonly stimulus:')
+  })
+
+  it('keeps quick rows and catalogue keys in one vocabulary', () => {
+    const rows = shortcutRows(normalizeShortcut({ tools: ['fs'] }, DEFAULTS, CATALOG))
+    expect(rows).toHaveLength(1)
+    expect(TOOL_KEYS.has('fs')).toBe(true)
+  })
+})
+
+describe('B14 — documentation points at files and tools that exist', () => {
+  /** Every markdown file in the repository, as `relative path → text`. */
+  function documents(): Map<string, string> {
+    const files = new Map<string, string>()
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry)
+        if (statSync(full).isDirectory()) {
+          if (entry === 'node_modules' || entry === '.git' || entry === 'lib') continue
+          walk(full)
+          continue
+        }
+        if (!entry.endsWith('.md')) continue
+        files.set(full.slice(ROOT.length).replaceAll('\\', '/'), readFileSync(full, 'utf8'))
+      }
+    }
+    walk(ROOT)
+    return files
+  }
+
+  it('names no retired tool', () => {
+    // A doc that tells a caller to run `harness_check` sends them to an unknown-tool error. Renaming a
+    // tool and leaving the prose behind is the cheapest way to make documentation lie.
+    for (const [file, text] of documents()) {
+      for (const stale of ['run_benchmark', 'harness_check', 'harness_dump']) {
+        expect(text.includes(stale), `${file} still names the retired tool ${stale}`).toBe(false)
+      }
+    }
+  })
+
+  it('names no deleted source file', () => {
+    // `src/composition.ts` and `src/quick.ts` were renamed in the vocabulary pass; a link to them is a
+    // dead link that the link check cannot see, because markdown anchors are checked, not targets.
+    const removed = ['src/composition.ts', 'src/quick.ts', 'src/tools/harness-check.ts']
+    for (const [file, text] of documents()) {
+      for (const gone of removed) {
+        expect(text.includes(gone), `${file} still points at the removed ${gone}`).toBe(false)
+      }
+    }
+  })
+
+  it('describes the record fields the code actually writes', () => {
+    // The record-directory README and the docs must use the same field names a reader will see.
+    const record = sources().get('src/record.ts') ?? ''
+    expect(record).toContain('modelInput')
+    expect(record).toContain('stimulus')
+    for (const [file, text] of documents()) {
+      if (!text.includes('trials.jsonl')) continue
+      // Any doc describing a trial line must name the two views by their shipped names.
+      expect(
+        text.includes('`assembly`'),
+        `${file} still calls the model-input view \`assembly\``,
+      ).toBe(false)
+    }
   })
 })

@@ -19,7 +19,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Fault } from './harness.ts'
+import type { Fault } from './fault.ts'
 
 /** What a gate needs to know about one armed subject. */
 interface ArmedSubject {
