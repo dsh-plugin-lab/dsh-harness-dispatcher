@@ -18,6 +18,7 @@ import { foldEvent, emptyFold, finishFold, summarize } from '../src/fold.ts'
 import { normalizeFaults } from '../src/fault.ts'
 import { harnessRows, harnessLabel, sealedRows } from '../src/harness.ts'
 import { normalizeShortcut, shortcutRows } from '../src/shortcut.ts'
+import { presetSummaries } from '../src/subject.ts'
 import { toolSpecOf } from '../src/tool.ts'
 import { SKILL_NAME } from '../src/skill.ts'
 import { presetIdFor } from '../src/subject.ts'
@@ -765,6 +766,84 @@ describe('B19 — `sealed` promises only what the host can actually do', () => {
     expect(doc).toMatch(/先到者赢/)
     // The other route that looked promising: injecting the service to get a scope-bound registry.
     expect(doc).toMatch(/PENDING/)
+  })
+})
+
+describe('B21 — a caller who knows nothing can still find out what exists', () => {
+  /**
+   * The rule: the free discovery step has to be reachable from zero knowledge. `harness_inspect` and
+   * `harness_export` both take a preset **id**, and nothing listed the ids — so a newcomer could not use
+   * the bench at all, and the skill's example (`standard`) was a hard-coded guess that need not exist on
+   * another profile (this machine's default is `cordis`).
+   */
+  it('lists presets when no target is named, instead of demanding one', () => {
+    const inspect = sources().get('src/tools/harness-inspect.ts') ?? ''
+    // The guard that used to reject "neither" now answers it.
+    expect(inspect).toContain('presetList(')
+    expect(inspect).toMatch(/args\.preset === undefined && args\.harness === undefined/)
+  })
+
+  it('names the default, so a caller can pick the one a bare session would use', () => {
+    const summaries = presetSummaries([
+      { id: 'zeta', isDefault: false, rows: [1, 2] },
+      { id: 'alpha', isDefault: true, rows: [1] },
+    ])
+    expect(summaries.map((preset) => preset.id)).toEqual(['alpha', 'zeta'])
+    expect(summaries[0]?.isDefault).toBe(true)
+    expect(summaries[0]?.rows).toBe(1)
+  })
+
+  it('lists a broken preset with its reason rather than hiding it', () => {
+    // Dropping it would send the caller to another id and leave them wondering why nothing matches; the
+    // fact they need is "the one you wanted is there and unusable".
+    const [broken] = presetSummaries([
+      { id: 'half', isDefault: false, rows: [], broken: 'row 3 names no plugin\nsecond line' },
+    ])
+    expect(broken?.broken).toContain('row 3 names no plugin')
+    const inspect = sources().get('src/tools/harness-inspect.ts') ?? ''
+    expect(inspect).toMatch(/cannot mount/)
+  })
+})
+
+describe('B22 — the skill is one page, and it says everything once', () => {
+  /**
+   * The rule: a skill is paid for on every load, so it stays short — but "short" must not be reached by
+   * dropping a fact that costs an experiment when missed. This line holds both halves: the ceiling, and
+   * a checklist of the facts, each of which was learned the hard way.
+   */
+  it('stays under the host prune threshold with room to spare', () => {
+    const skill = sources().get('src/skill.ts') ?? ''
+    const start = skill.indexOf('const CONTENT = `')
+    const body = skill.slice(start, skill.indexOf('`\n\n/** Routing text'))
+    // Above 8192 the standard preset's tool-result pruner trims the body mid-sentence.
+    expect(body.length).toBeLessThan(8192)
+    // And not by being terse to the point of losing facts: every section below must be present.
+    for (const heading of [
+      '# Benchmarking a harness',
+      '## The loop',
+      '## Shaping the subject',
+      '## What the records say',
+      '## Do not',
+    ]) {
+      expect(body, `the skill lost "${heading}"`).toContain(heading)
+    }
+  })
+
+  it('keeps every fact that costs an experiment when missed', () => {
+    const skill = sources().get('src/skill.ts') ?? ''
+    for (const fact of [
+      /no arguments/, // discovery comes first: without an id nothing else works
+      /CATALOGUE KEYS/,
+      /MODEL-FACING TOOL NAMES/,
+      /fingerprint/,
+      /sealed: true/,
+      /cannot mask/, // skills: the one thing sealing does not cover
+      /dsh-harness-dispatcher\/tool/, // a tool can be defined or replaced in the file
+      /byte-identical/, // the task is the controlled variable
+      /credentials/,
+    ]) {
+      expect(skill, `the skill no longer states ${String(fact)}`).toMatch(fact)
+    }
   })
 })
 
