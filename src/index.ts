@@ -54,7 +54,7 @@ let mountCounter = 0
  * @param config - resolved plugin configuration.
  */
 export function apply(ctx: Context, config: PluginConfig): void {
-  const resolved = resolveConfig(config)
+  const resolved = resolveConfig(config, ctx.baseUrl)
 
   // Fail at load, not at run time: a default tool key that does not exist would otherwise surface as a
   // malformed harness after a child had already been started.

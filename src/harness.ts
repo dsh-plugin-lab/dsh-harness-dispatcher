@@ -37,6 +37,7 @@
 
 import { readFile, stat } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { Vocabulary } from './catalog.ts'
 import { digestText } from './digest.ts'
 import { normalizeShortcut, shortcutLabel, shortcutRows } from './shortcut.ts'
@@ -299,13 +300,48 @@ function resolveMaxDepth(given: number | undefined, fallback: number): number {
  * A file harness becomes exactly one include row, so the host parses the file. A shortcut is already
  * rows and ignores the path — its compiled form is what ran, and its captured JSON is what a replay
  * will parse.
+ *
+ * ## `path` must be a `file:` URL, not a path
+ *
+ * The host resolves the include's path with `new URL(path, baseUrl)` and then `fileURLToPath`. On a
+ * drive letter that is a trap: `new URL('C:/x/y.yml', …)` parses `C:` as a **URL scheme**, so
+ * `fileURLToPath` throws `ERR_INVALID_URL_SCHEME`. Measured on Windows against `0.2.2-rc.1`, host row
+ * `cordis:include`: an absolute path in `path` never mounts. A `file://` URL does.
+ *
+ * ## And the file must sit where row names resolve
+ *
+ * `Include` sets `ctx.baseUrl` to the harness file's own directory, and a bare `@deepseek-ai/…` row
+ * name resolves through the host's interception layer only when the importing file is inside a profile
+ * tree or a linked package. Measured on the same host: a harness file in `%TEMP%` imports fine and then
+ * fails every row with `MODULE_NOT_FOUND`. So {@link mountPathFor} keeps the mount on a resolution base.
+ *
  * @param captured - the captured harness.
  * @param mountPath - absolute path the harness is readable at when it is mounted.
  * @returns rows in load order.
  */
 export function harnessRows(captured: CapturedHarness, mountPath: string): readonly HarnessRow[] {
   if (captured.source === 'shortcut') return captured.rows
-  return [{ id: INCLUDE_ROW_ID, name: INCLUDE_PLUGIN, config: { path: mountPath } }]
+  return [{ id: INCLUDE_ROW_ID, name: INCLUDE_PLUGIN, config: { path: fileURLOf(mountPath) } }]
+}
+
+/**
+ * The absolute path to mount a file harness from.
+ *
+ * **The operator's file, not the run-directory copy.** The copy is evidence; mounting it would move the
+ * resolution base to the run directory, which is outside every profile tree, so every `@deepseek-ai/…`
+ * row name in the file would fail to import. Byte-equality between the two is still recorded: the digest
+ * comes from the same read that produced the captured text.
+ * @param captured - the captured harness.
+ * @param runCopyPath - where the run directory keeps its verbatim copy.
+ * @returns the path to mount.
+ */
+export function mountPathFor(captured: CapturedHarness, runCopyPath: string): string {
+  return captured.source === 'file' ? captured.originPath : runCopyPath
+}
+
+/** A `file:` URL the host's include plugin accepts. See the note on {@link harnessRows}. */
+function fileURLOf(absolutePath: string): string {
+  return pathToFileURL(absolutePath).href
 }
 
 /**

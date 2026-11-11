@@ -295,15 +295,34 @@ describe('B7 — a missing measurement is recorded as missing, not as zero', () 
 })
 
 describe('B8 — the harness is captured, and the capture is what mounts', () => {
-  it('mounts the run-directory copy, never the operator file', () => {
-    // If the origin were mounted, an edit between the read and the mount would leave a record whose
-    // digest describes a harness that never ran.
+  it('mounts the operator file, never the run-directory copy', () => {
+    // Measured on Windows against 0.2.2-rc.1: a harness file outside a profile tree imports, then fails
+    // every `@deepseek-ai/…` row with MODULE_NOT_FOUND, because `Include` sets the resolution base to the
+    // file's own directory. The run directory is outside every profile tree, so mounting the copy would
+    // silently break every file harness.
     const tool = sources().get('src/tools/harness-run.ts') ?? ''
-    expect(tool).toMatch(/harnessRows\([\s\S]{0,200}?run\.harnessPath/)
-    expect(tool).not.toMatch(/harnessRows\([\s\S]{0,200}?originPath/)
+    expect(tool).toContain('mountPathFor(')
+    // Precisely: the copy must not be the path handed to `harnessRows` directly.
+    expect(tool).not.toMatch(/harnessRows\([^,]+,\s*run\.harnessPath\)/)
   })
 
-  it('writes the captured text, so the copy is byte-identical to what mounts', () => {
+  it('addresses the include by a file: URL, never a bare path', () => {
+    // `new URL('C:/x.yml', baseUrl)` parses `C:` as a scheme, so `fileURLToPath` throws
+    // ERR_INVALID_URL_SCHEME and the row never mounts. A bare path in `path` is the Windows bug.
+    const harness = sources().get('src/harness.ts') ?? ''
+    expect(harness).toContain('pathToFileURL(')
+    expect(harness).toMatch(/config: \{ path: fileURLOf\(/)
+  })
+
+  it('keeps the default export directory inside the profile tree', () => {
+    // A harness file must sit on a resolution base for its row names to resolve, so a default outside the
+    // profile would produce exports that cannot run.
+    const config = sources().get('src/config.ts') ?? ''
+    expect(config).toContain('profileDirectoryOf(')
+    expect(config).toContain('baseUrl')
+  })
+
+  it('writes the captured text, so the copy is byte-identical to what was read', () => {
     expect(sources().get('src/record.ts')).toMatch(/writeFile\(harnessPath,\s*captured\.text/)
   })
 
@@ -322,6 +341,7 @@ describe('B8 — the harness is captured, and the capture is what mounts', () =>
     )
     expect(rows).toHaveLength(1)
     expect(rows[0]?.name).toBe('cordis:include')
+    expect(String((rows[0]?.config as { path: string }).path)).toContain('file:///')
   })
 
   it('imports no YAML parser of its own', () => {

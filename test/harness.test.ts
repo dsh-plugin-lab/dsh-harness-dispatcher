@@ -8,6 +8,7 @@ import {
   harnessLabel,
   harnessPathCandidates,
   harnessRows,
+  mountPathFor,
   resolveHarness,
 } from '../src/harness.ts'
 
@@ -140,12 +141,27 @@ describe('capturing a file', () => {
 })
 
 describe('mounting rows', () => {
-  it('hands a file harness to the host as one include row', async () => {
+  it('hands a file harness to the host as one include row, addressed by a file: URL', async () => {
+    // Not a bare path: the host resolves `path` with `new URL(path, baseUrl)`, so on a drive letter
+    // `C:/x.yml` parses as URL scheme `c:` and `fileURLToPath` throws ERR_INVALID_URL_SCHEME.
+    // Measured on Windows against 0.2.2-rc.1 — an absolute path in `path` never mounts.
     await writeFile(join(root, 'minus-web.yml'), '- name: x\n', 'utf8')
     const resolved = await resolveHarness({ harness: { file: 'minus-web' } }, deps())
     const rows = harnessRows(resolved.captured, join(root, 'harness.yml'))
     expect(rows[0]?.name).toBe('cordis:include')
-    expect((rows[0]?.config as { path: string }).path).toBe(join(root, 'harness.yml'))
+    const path = (rows[0]?.config as { path: string }).path
+    expect(path.startsWith('file:///')).toBe(true)
+    expect(path).toContain('harness.yml')
+  })
+
+  it('mounts the operator file, not the run-directory copy', async () => {
+    // The copy is evidence. Mounting it would move the resolution base to the run directory, which is
+    // outside every profile tree, so every `@deepseek-ai/…` row name would fail to import.
+    await writeFile(join(root, 'minus-web.yml'), '- name: x\n', 'utf8')
+    const resolved = await resolveHarness({ harness: { file: 'minus-web' } }, deps())
+    expect(mountPathFor(resolved.captured, '/run/dir/harness.yml')).toBe(
+      join(root, 'minus-web.yml'),
+    )
   })
 
   it('mounts the compiled rows for a shortcut, ignoring the path', async () => {

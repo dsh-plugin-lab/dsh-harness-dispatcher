@@ -34,7 +34,7 @@ import type { FoldCollector } from '../collector.ts'
 import { assertFaultsReachable, normalizeFaults } from '../fault.ts'
 import type { FaultGate } from '../gate.ts'
 import type { ResolveDeps } from '../harness.ts'
-import { harnessLabel, harnessRows, resolveHarness } from '../harness.ts'
+import { harnessLabel, harnessRows, mountPathFor, resolveHarness } from '../harness.ts'
 import { openRun, stimulusRecord } from '../record.ts'
 import { mountSubject, presetIdFor } from '../subject.ts'
 import type { Subject } from '../subject.ts'
@@ -218,7 +218,7 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
           subject = await mountSubject(ctx, {
             presetId,
             label: harnessLabel(harness.captured),
-            rows: harnessRows(harness.captured, run.harnessPath),
+            rows: harnessRows(harness.captured, mountPathFor(harness.captured, run.harnessPath)),
           })
           // Only a harness that can actually receive them may claim them in its record.
           assertFaultsReachable(faults, subject.surface.tools)
