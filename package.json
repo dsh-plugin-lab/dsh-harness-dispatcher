@@ -43,6 +43,7 @@
   "files": [
     "lib",
     "!lib/**/*.map",
+    "skills",
     "icon.svg",
     "locale/*.json",
     "cordis.patch.yml",
