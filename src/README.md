@@ -9,6 +9,7 @@
 |---|---|---|---|
 | [digest.ts](digest.ts) | `digestBytes` / `digestText` / `digestJson` | `harness`、`record`、`fold` | B4（记录里不许出现原文） |
 | [text.ts](text.ts) | `contentBlocksOf` | `trial` | — |
+| [attachments.ts](attachments.ts) | `resolvePrompt` / `planAttachment` / `imageDeliveryProblem` / `TaskAttachment` | `tools/harness-run`、`record` | **B27**（图片不可用必须拒；文件是路径句柄；记录只留身份）+ `attachments` 单测 |
 | [config.ts](config.ts) | `Config` / `ResolvedConfig` / `resolveConfig` | `index` | B9 + 真机（`harnessDir` 默认值决定能否挂载） |
 
 `resolveConfig` 收 `baseUrl`，把 `harnessDir` 默认到 **profile 目录内**。这不是风格：
@@ -91,6 +92,7 @@ frontmatter 的 `name` / `description` / `author` / `metadata.source`），apply
 | 你在改的东西 | 同批必须改 |
 |---|---|
 | 工具的名字 / 数量 / 参数 schema | 本文件 → [能力面](../docs/ARCHITECTURE.md#5-能力面) → 红线 B11/B14 |
+| 任务的附件（图 / 文件） | `attachments.ts` → [任务是输入，可以带附件](../docs/ARCHITECTURE.md#343-任务是输入可以带附件) → 红线 **B27** → `record.ts` 的 `TaskRecord.attachments` |
 | harness 的形状（行列表 / 捷径标量 / 判据三层） | [Harness 的形状](../.agents/notes/2026-11-11-harness-shape.md) 是**判据** → `harness.ts`（捕获）→ `shortcut.ts`（糖）→ `record.ts` 的 `StimulusRecord` |
 | 挂载 / 审计 / 探针的顺序 | `subject.ts` → 红线 **B10** |
 | `sealed`（工具集封闭） | `sealed.ts` + `harness.ts` 的 `sealedRows` + `subject.ts` 的 `inheritedBy` → 红线 **B15**（遮罩行必须在前）/ **B19**（不承诺遮技能） |

@@ -24,9 +24,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { AgentPresetRegistry } from '@deepseek-ai/dsh-agent-preset-registry'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
+import type { ResolvedPrompt } from './attachments.ts'
 import type { FoldCollector } from './collector.ts'
 import { assertFaultsReachable } from './fault.ts'
 import type { Fault } from './fault.ts'
@@ -48,7 +48,13 @@ export interface RunRequest {
   readonly faults: readonly Fault[]
   readonly sealed: boolean
   readonly taskId: string
-  readonly prompt: string
+  /**
+   * The task as the child receives it: text, blocks, and the attachment identity the record keeps.
+   *
+   * Resolved by the caller **before** the run exists, so a task that cannot be built is rejected
+   * while there is still nothing on disk to clean up.
+   */
+  readonly prompt: ResolvedPrompt
   readonly cwd: string | null
   readonly outputSchema: ObjectJsonSchema | null
   /** `0` disables the per-trial budget. */
@@ -141,10 +147,11 @@ export async function runBench(
       stimulus,
       task: {
         taskId: request.taskId,
-        prompt: request.prompt,
+        prompt: request.prompt.text,
         cwd: request.cwd,
         outputSchemaRequested: request.outputSchema !== null,
         outputSchema: request.outputSchema,
+        attachments: request.prompt.attachments,
       },
       note: null,
     },
@@ -173,7 +180,7 @@ export async function runBench(
       presetId,
       stimulus,
       taskId: request.taskId,
-      prompt: [{ type: 'text', text: request.prompt }] as ContentBlock[],
+      prompt: [...request.prompt.blocks],
       cwd: request.cwd,
       outputSchema: request.outputSchema,
       timeoutMs: request.timeoutMs > 0 ? request.timeoutMs : null,

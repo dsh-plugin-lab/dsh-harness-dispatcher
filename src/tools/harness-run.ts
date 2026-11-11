@@ -21,10 +21,12 @@ import type { AgentPresetRegistry } from '@deepseek-ai/dsh-agent-preset-registry
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { AttachmentPlan, AttachmentStoreSeam, PromptSeam } from '../attachments.ts'
+import { imageDeliveryProblem, planAttachment, resolvePrompt } from '../attachments.ts'
 import type { FoldCollector } from '../collector.ts'
 import { normalizeFaults } from '../fault.ts'
 import type { FaultGate } from '../gate.ts'
-import type { ResolveDeps } from '../harness.ts'
+import type { ResolveDeps, ResolvedHarness } from '../harness.ts'
 import { resolveHarness } from '../harness.ts'
 import { jobOutcomeOf } from '../jobs.ts'
 import type { JobRegistry } from '../jobs.ts'
@@ -32,12 +34,14 @@ import { runDirectoryFor } from '../record.ts'
 import { runBench, summaryLine } from '../run.ts'
 import type { RunDeps, RunRequest, TrialSummary } from '../run.ts'
 import {
+  ATTACHMENTS_PARAMETER,
   FAULTS_PARAMETER,
   REQUIRED_HARNESS,
   ROUTE_PARAMETERS,
   faultsOf,
   harnessInputOf,
 } from './params.ts'
+import type { ModelRouter } from './params.ts'
 
 /** Everything the tool needs from the plugin instance. */
 export interface HarnessRunDeps extends ResolveDeps {
@@ -129,6 +133,7 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
           required: true,
           description: 'The task text handed to the subject. Identical across harness variants.',
         },
+        ...ATTACHMENTS_PARAMETER,
         trials: {
           type: 'number',
           description:
@@ -197,6 +202,23 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
         if (!Number.isSafeInteger(trials) || trials < 1 || trials > deps.limits.maxTrials) {
           throw new Error(`trials must be an integer from 1 to ${String(deps.limits.maxTrials)}`)
         }
+        // Kinds are decided from the extension alone, so the route gate below costs no I/O and comes
+        // first: an image that this route cannot deliver must be refused before its bytes are stored.
+        const attached = args.attachments ?? []
+        await assertImagesDeliverable(
+          ctx,
+          harness,
+          parent,
+          attached.map((item) => planAttachment(item.path)),
+        )
+        // The task is built last, because building it writes to the attachment store — cheap and
+        // content-addressed, but still the one step that touches host state, so it goes after every
+        // argument that could have been wrong.
+        const prompt = await resolvePrompt(
+          args.prompt,
+          attached,
+          promptSeam(ctx, exec.signal, args.cwd ?? null),
+        )
 
         const request: RunRequest = {
           // Created here, not inside the run: a background run has to name itself before it starts.
@@ -205,7 +227,7 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
           faults,
           sealed: args.harness?.sealed === true,
           taskId: args.task_id,
-          prompt: args.prompt,
+          prompt,
           cwd: args.cwd ?? null,
           outputSchema: (args.output_schema as ObjectJsonSchema | undefined) ?? null,
           timeoutMs: args.timeout_ms ?? deps.limits.trialTimeoutMs,
@@ -365,6 +387,87 @@ function trialLine(outcome: TrialSummary, total: number): string {
     ...(outcome.timedOut ? ['timed out'] : []),
   ]
   return `trial ${String(outcome.index)}/${String(total)}: ${flags.join(', ')}`
+}
+
+/**
+ * The host services an attachment needs, bound to this call.
+ *
+ * Both are optional services, so both are looked up rather than injected: a profile with no attachment
+ * store still runs text-only tasks. `read` goes through the host filesystem backend for the same reason
+ * `read_image` does — it is the one thing that knows the execution world's paths and the sandbox.
+ * @param ctx - context that may expose `attachments` and `fs`.
+ * @param signal - cancellation for the reads.
+ * @param cwd - the task's working directory, so a relative attachment resolves where the subject runs.
+ * @returns the seam an attachment resolution needs.
+ */
+function promptSeam(ctx: Context, signal: AbortSignal, cwd: string | null): PromptSeam {
+  const store: AttachmentStoreSeam | undefined = ctx.get('attachments')
+  return {
+    attachments: store,
+    async read(path: string, maxBytes: number): Promise<Uint8Array> {
+      const fs = ctx.get('fs')
+      if (fs === undefined) {
+        throw new Error(
+          `cannot attach "${path}": this profile mounts no filesystem service, so the path cannot be ` +
+            'resolved. Load @deepseek-ai/dsh-fs (and a backend), or drop `attachments`.',
+        )
+      }
+      const target = await fs.resolve(path, {
+        signal,
+        ...(cwd === null ? {} : { cwd }),
+      })
+      const info = await fs.stat(target, signal)
+      if (info === undefined) throw new Error(`cannot attach "${path}": no such file`)
+      if (info.type !== 'file') throw new Error(`cannot attach "${path}": not a regular file`)
+      return fs.readBytes(target, signal, maxBytes)
+    },
+  }
+}
+
+/**
+ * Refuse an image the subject's route cannot deliver, before anything is stored or run.
+ *
+ * The host does not fail here: `LlmRuntime` replaces every image with a placeholder line when the
+ * resolved model does not declare `image` input, so the trials would run without the input they were
+ * given and the record would look normal. The route checked is the **subject's**, resolved the way the
+ * host's own `read_image` resolves the calling route — the bench's route override first, then the
+ * parent's recorded request, then the parent's options — because a bench that validated the caller's
+ * route would be asking a different question.
+ * @param ctx - context that may expose the llm runtime.
+ * @param harness - the resolved harness, whose route override is the first choice.
+ * @param parent - the calling agent, which supplies the inherited route.
+ * @param plans - the attachments about to be sent.
+ * @throws {Error} when an image is attached and the route cannot take it.
+ */
+async function assertImagesDeliverable(
+  ctx: Context,
+  harness: ResolvedHarness,
+  parent: Agent,
+  plans: readonly AttachmentPlan[],
+): Promise<void> {
+  if (!plans.some((plan) => plan.kind === 'image')) return
+  const recorded = parent.session.requestHeader()?.config
+  const provider = harness.route.provider ?? recorded?.provider ?? parent.options.provider
+  const model = harness.route.model ?? recorded?.model ?? parent.options.model
+  if (provider === undefined || model === undefined) {
+    throw new Error(imageDeliveryProblem(null, undefined) ?? 'unresolvable image route')
+  }
+  const llm: ModelRouter | undefined = ctx.get('llm')
+  if (llm === undefined) {
+    throw new Error(
+      imageDeliveryProblem(`${provider}/${model}`, undefined) ?? 'unresolvable image route',
+    )
+  }
+  const info = (await llm.resolveModelInfo(provider, model)) as {
+    readonly inputModalities?: readonly string[]
+  }
+  // Absent modalities mean "unknown", and unknown is not a promise: the host's own gate treats it as a
+  // refusal, and so does this one.
+  const problem = imageDeliveryProblem(
+    `${provider}/${model}`,
+    info.inputModalities?.includes('image'),
+  )
+  if (problem !== undefined) throw new Error(problem)
 }
 
 /** The message of an unknown thrown value, without losing a non-Error. */

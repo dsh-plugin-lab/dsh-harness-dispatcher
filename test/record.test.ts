@@ -43,6 +43,7 @@ function meta(runId: string, harness: Awaited<ReturnType<typeof captured>>): Run
       cwd: null,
       outputSchemaRequested: false,
       outputSchema: null,
+      attachments: [],
     },
     note: null,
   }

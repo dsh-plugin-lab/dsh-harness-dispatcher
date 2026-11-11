@@ -92,6 +92,33 @@ export const ROUTE_PARAMETERS = {
   max_depth: { type: 'number', description: 'Delegation budget granted to the subject.' },
 } as const satisfies ParameterSchemaSpec
 
+/** The attachments parameter, shared so the two kinds are described once. */
+export const ATTACHMENTS_PARAMETER = {
+  attachments: {
+    type: 'array',
+    description:
+      'Files the task carries, sent to the subject in this order after the prompt text. The kind ' +
+      'comes from the extension: png/jpeg/webp/gif become an image the subject SEES (only if the ' +
+      'route declares image input — otherwise the run is refused rather than run without it); ' +
+      'everything else becomes a file the subject can only READ, always projected by the host into ' +
+      'one handle line naming a read-only path. Stored once per run and referenced by id; the bytes ' +
+      'are never copied into the run directory.',
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        path: {
+          type: 'string',
+          required: true,
+          description:
+            'Path to the file, resolved by the host filesystem backend. Relative paths resolve ' +
+            'against `cwd` when you pass one, so absolute paths are the safer choice.',
+        },
+      },
+    },
+  },
+} as const satisfies ParameterSchemaSpec
+
 /** The faults parameter, shared so the tools describe the three modes identically. */
 export const FAULTS_PARAMETER = {
   faults: {

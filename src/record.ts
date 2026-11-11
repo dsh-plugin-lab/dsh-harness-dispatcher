@@ -17,6 +17,7 @@
 
 import { appendFile, mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { TaskAttachment } from './attachments.ts'
 import type { Fault } from './fault.ts'
 import type { ObservedModelInput, TraceFeatures } from './fold.ts'
 import type { CapturedHarness, ResolvedHarness } from './harness.ts'
@@ -51,6 +52,14 @@ export interface TaskRecord {
   readonly cwd: string | null
   /** Whether a structured answer was requested. The schema itself is in the run metadata. */
   readonly outputSchemaRequested: boolean
+  /**
+   * Files the task carried, as identity only — kind, name, byte count, durable id.
+   *
+   * Not the bytes: they live in the host's content-addressed attachment store, and a copy here would
+   * make a run directory grow with the size of its input. A reader who needs the object follows the
+   * id; the harness, not the task, is the part of this directory that must be self-sufficient.
+   */
+  readonly attachments: readonly TaskAttachment[]
 }
 
 /** One trial's durable record: the stimulus, the outcome, and the two folded views. */
@@ -163,6 +172,10 @@ How to read it
   2. trace says what the subject DID.  modelInput says what it WAS GIVEN.
   3. Both are facts, not scores. This plugin computes no statistics: group and average
      them outside, with whatever method your study needs.
+  4. Task attachments (run.json, task.attachments) are identified, not copied: the
+     bytes live in the host attachment store under that id. An image only reached the
+     subject if its route declared image input; a file always arrives as a handle
+     line naming a read-only path, never as contents.
 
 A harness file is copied verbatim into this directory, so never put credentials in one.
 `

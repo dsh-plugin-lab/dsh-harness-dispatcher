@@ -34,6 +34,19 @@ nothing — the records are the deliverable, and analysis happens outside.
 4. **Change one thing.** Keep `task_id` and `prompt` byte-identical between harnesses — that is the
    whole experiment.
 
+## Giving the task a picture or a file
+
+`attachments: [{ path }]` is a sibling of `prompt`, sent in order after the text. The extension decides
+what it is, and the two are different experiments:
+
+- **An image is something the subject SEES** — but only if the model route declares `image` input. The
+  host otherwise swaps it for a placeholder line **without failing**, so this bench refuses to start
+  instead of running trials that never saw it. An attached image therefore also pins the route.
+- **A file is a pointer the subject must follow.** The host never sends file bytes: it sends one line
+  naming the file, its size and a read-only path. A harness with no file tool scores zero here, and
+  that is a finding, not a defect. That path sits outside the subject's working directory, so a sealed
+  harness may be refused by its own sandbox when it tries to read it.
+
 ## Shaping the subject
 
 - **A harness is a delta, not a world.** By default the subject also inherits every tool the host

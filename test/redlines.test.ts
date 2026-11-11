@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { CATALOG, DEFAULT_TOOLS, TOOL_CATALOG, TOOL_KEYS } from '../src/catalog.ts'
+import { imageDeliveryProblem, resolvePrompt } from '../src/attachments.ts'
 import { foldEvent, emptyFold, finishFold, summarize } from '../src/fold.ts'
 import { normalizeFaults } from '../src/fault.ts'
 import { harnessRows, harnessLabel, sealedRows } from '../src/harness.ts'
@@ -965,6 +966,76 @@ describe('B26 — a background run is the same run, only waited for differently'
   })
 })
 
+describe('B27 — an attachment never degrades silently', () => {
+  /** Bytes stand in for any file; the store fake only measures their length. */
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+  /**
+   * The rule: an attachment either reaches the subject as asked, or the run does not start.
+   *
+   * Three measured ways to lose it quietly, all of them the host's own behaviour rather than a bug in
+   * it: `LlmRuntime` swaps every image for a placeholder line when the resolved model does not declare
+   * `image` input; a file never travels as bytes, only as one handle line naming a read-only path; and
+   * a profile with no attachment store simply has nowhere to put the bytes. Any of the three, handled
+   * by falling back, produces a trial that never saw its input and a record that looks normal — the
+   * worst outcome an experiment can have.
+   */
+  it('refuses an image the subject’s route cannot deliver', () => {
+    // Behaviour, not source shape: the decision is a wording judgement, so it is a pure function.
+    expect(imageDeliveryProblem('p/m', false)).toContain('image-capable route')
+    expect(imageDeliveryProblem('p/m', undefined)).toContain('placeholder')
+    expect(imageDeliveryProblem(null, undefined)).toContain('provider')
+    expect(imageDeliveryProblem('p/m', true)).toBeUndefined()
+    // And the tool asks that question about the SUBJECT's route: the bench's override first, then the
+    // parent's recorded request, then the parent's options — the host's own resolution order.
+    const tool = stripComments(sources().get('src/tools/harness-run.ts') ?? '')
+    expect(tool).toMatch(/assertImagesDeliverable\(/)
+    expect(tool).toMatch(/inputModalities\?\.includes\('image'\)/)
+    expect(tool).toMatch(
+      /harness\.route\.provider \?\? recorded\?\.provider \?\? parent\.options\.provider/,
+    )
+  })
+
+  it('refuses attachments where the profile mounts no durable store', async () => {
+    // There is no pass-through path: the id in the record would name nothing.
+    await expect(
+      resolvePrompt('x', [{ path: '/tmp/a.png' }], {
+        attachments: undefined,
+        read: async () => PNG,
+      }),
+    ).rejects.toThrow(/dsh-attachment/)
+  })
+
+  it('keeps attachment identity in the record and the bytes out of it', async () => {
+    const prompt = await resolvePrompt('x', [{ path: '/tmp/a.png' }], {
+      attachments: {
+        imageLimits: { mediaTypes: ['image/png'], maxImageBytes: 10, maxMessageImageBytes: 10 },
+        saveImage: async (input) => ({
+          attachmentId: 'sha256:abc',
+          bytes: input.data.byteLength,
+          mediaType: input.mediaType,
+        }),
+        saveFile: async (input) => ({ attachmentId: 'sha256:def', bytes: input.data.byteLength }),
+      },
+      read: async () => PNG,
+    })
+    expect(JSON.stringify(prompt.attachments)).not.toContain('data')
+    // The run directory's reader is told both facts: attachments are identified, not copied, and a file
+    // arrives as a path rather than as contents. Otherwise a reader assumes the bytes are in there.
+    const record = sources().get('src/record.ts') ?? ''
+    expect(record).toMatch(/identified, not copied/)
+    expect(record).toMatch(/handle\s+line naming a read-only path/)
+  })
+
+  it('says which half of the delivery a file attachment lost', () => {
+    // The parameter description is the only place a caller learns that a "file" is a pointer, and that
+    // an image needs an image-capable model. Getting this wrong costs a whole run, in silence.
+    const params = sources().get('src/tools/params.ts') ?? ''
+    expect(params).toMatch(/image the subject SEES/)
+    expect(params).toMatch(/everything else becomes a file the subject can only READ/)
+    expect(params).toMatch(/never copied into the run directory/)
+  })
+})
+
 describe('B21 — a caller who knows nothing can still find out what exists', () => {
   /**
    * The rule: the free discovery step has to be reachable from zero knowledge. `harness_inspect` and
@@ -1041,6 +1112,8 @@ describe('B22 — the skill is one page, and it says everything once', () => {
       /maxDepth/, // delegation is gated by the row, not by the request-level max_depth
       /timeout_ms/, // a budget-stopped trial is an observation, not a harness failure
       /run_in_background/, // a long run is a job, not a held turn
+      /attachments/, // a task can carry a picture or a file, and the two are different experiments
+      /placeholder line/, // an image the route cannot deliver is refused, not silently swapped
     ]) {
       expect(body, `the skill no longer states ${String(fact)}`).toMatch(fact)
     }
