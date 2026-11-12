@@ -73,12 +73,15 @@ One run is a self-sufficient directory:
   README.txt        # for whoever reads the data: which field to compare
 ```
 
-Inside a trial line, three layers, and the split is the point:
+Inside a trial line, two layers, and the split is the point:
 
 - **`host`** — what the host already computed (timing, token buckets, context pressure, policy, delegation),
   copied back unchanged. A second set of totals would be a second set of definitions.
 - **`modelInput` + `trace`** — what the subject was *given*, and the three counts no host projection
   offers. This is the evidence that two runs applied the same assembly.
+
+Beside the line sits the third layer, and it is a separate file:
+
 - **`events.jsonl`** — the subject's committed events, verbatim, on by default. It is what lets a record be
   re-folded under an analysis this plugin never anticipated, which is why the plugin computes no statistics:
   means, intervals and significance belong to R or Python, outside this repository.

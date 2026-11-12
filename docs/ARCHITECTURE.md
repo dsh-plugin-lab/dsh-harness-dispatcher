@@ -152,11 +152,15 @@ tools:    ['fs', 'fs-search', 'pwsh', 'bash', 'todo', 'web', 'present']   ← �
 persona:  native | terse | verbose | pair-programmer | custom
 faults:   [{ tool, mode: deny|fail|latency, message?, latency_ms? }]
 provider/model:  成对出现或都不出现
+reasoning_effort: 非空字符串，或省略（继承）
+max_tokens:      ≥ 1，或省略（继承）
 max_depth:       ≥ 1
 ```
 
-`normalize()` 会拒绝：未知工具键、空工具集（要消融必须显式传空之外的写法）、
-同一工具的**矛盾故障**、`latency_ms` 用在非 latency 模式、provider/model 只给一半、`max_depth < 1`。
+`normalize()` 会拒绝：未知工具键、同一工具的**矛盾故障**、`latency_ms` 用在非 latency 模式、
+provider/model 只给一半、`max_tokens < 1`、`max_depth < 1`。**空工具集不再被拒** —— 零工具是消融的
+端点，是不是端点由挂载后的观察结果判（`emptySurfaceVerdict`：行被 profile 全禁是阻塞问题，一行都没声明
+是警告）。
 
 **当时的判据**：枚举错不了，自由 JSON 会错；而且枚举让「同一份 Harness」能被两个独立 trial 复现 ——
 这正是「控制变量」的前提。
@@ -425,6 +429,11 @@ ownEvents()      @deprecated … new calls are prohibited
   README.txt        # 给读数据的人：该比 stimulus.fingerprint
 ```
 
+**这两个 `.jsonl` 的名字是本仓起的，不是宿主定义的。** 官方只说会话日志由 JSONL 后端持久化，其源头是
+内存里那个 append-only 的 `Session`；`trials.jsonl` 是 trial 记录（纯本仓产物），`events.jsonl` 是
+**我们把该 Session 已提交的事件抄出来的一份副本**。所以「宿主自己的日志在哪」不是一个该在这里找的
+东西 —— 上游是内存里的 Session，`events.jsonl` 是它的证据副本。
+
 **`events.jsonl` 默认开。** 它是「产物必须能被另一个口径重算」这条纪律的物质基础：只有聚合值的记录
 不可重算，今天不记 TTFT、明天发现它最关键，就回不去了。它也装着聚合层留不住的东西（工具实参、
 工具返回、被注入的上下文、逐 step 时间戳、重试、压缩 —— 宿主的 25 个投影里没有一个暴露压缩，
@@ -573,7 +582,7 @@ harness 文件所在目录，而 run 目录不在任何解析基准上，挂副�
 | 意图 | 谁在按 | 行为 |
 |---|---|---|
 | 这次实验不要了 | 主会话的停止 / `job_kill` | 在飞的 trial 取消并记 `aborted`，不再启动新的；已记录的保留 |
-| 这一个 trial 不要了，实验继续 | 子会话页面的中断 | 宿主 `interrupt` 取消那一轮；该 trial 记 `aborted`（`timedOut: false`），**下一个照常启动** |
+| 这一个 trial 不要了，实验继续 | 该子 Session 页面的中断 | 宿主 `interrupt` 取消那一轮；该 trial 记 `aborted`（`timedOut: false`），**下一个照常启动** |
 | 预算到点 | `timeout_ms` | 同上，但记 `timedOut: true` |
 
 第二行是**真机验过**的（2026-11-11）：连续中断两个 trial，记录三条，run 自己跑完了 —— 也就是说"只想丢掉一个
@@ -605,7 +614,7 @@ trial"这件事不需要本插件做任何事，宿主已经给了，插件只�
 `timedOut: true`，而受试体仍跑到结束（实测 700ms 预算配 15.5s 实际耗时，`stopReason` 还是
 `completed`）。
 
-真正能停的是 `activation.dispose()`：它取消该子会话的这一轮、等到 idle，再把 `result` 以
+真正能停的是 `activation.dispose()`：它取消该子 Session 的这一轮、等到 idle，再把 `result` 以
 `stopReason: "aborted"` 结算。因此 [src/trial.ts](../src/trial.ts) 在融合信号上挂一个
 「取消并 dispose」的监听，并且**只在结果真的是 `aborted` 时才写 `timedOut`**。
 红线 **B23** 钉住这两点，以及「已记录 / 已完成」分开报数。
@@ -640,7 +649,7 @@ trial"这件事不需要本插件做任何事，宿主已经给了，插件只�
 后台通道（`ctx.jobs`）也已验过：注册即返回、`job_output` 读到逐 trial 进度、完成通知自动到达、
 `job_kill` 之后记录保留。
 
-**还差一格**：无 —— 三种停止路径都真机验过了。子会话中断只丢一个 trial、run 照跑（连按两次中断，
+**还差一格**：无 —— 三种停止路径都真机验过了。子 Session 中断只丢一个 trial、run 照跑（连按两次中断，
 三条记录）；后台 `job_kill` 连受试体一起停（4 trial 的 run 在第 2 个跑到 55.7s 时被杀，磁盘 2 行、
 状态 `killed`、preset 无残留）；前台按停止**立刻**断开在飞的那个（trial 1 正常 `completed` 32.8s，
 trial 2 在 10.6s 处记 `aborted`，请求 4 个落 2 行）。同一命令在改动前后各跑一次，结论相反 —— 那

@@ -112,7 +112,7 @@ typecheck / 测试 / `check:release` —— 那些归 `check` 与 CI，一次提
   `toolCalls: 0`），证明图走的是**原生图片**而不是"靠工具补救"；路由不存在时在开跑前就被拒，且没留目录。
 - **停止停一切**（2026-11-11 晚，**真机验过**）：
   主会话的停止与 `job_kill` 都会**取消在飞的那个 trial** 并记成 `aborted`，后面的一个都不再启动。
-  只丢一个 trial 是**另一种意图**，宿主从那个子会话的页面直接给了（真机：连按两次中断，三条记录，
+  只丢一个 trial 是**另一种意图**，宿主从那个子 Session 的页面直接给了（真机：连按两次中断，三条记录，
   run 照跑完）。前台被停时调用方**看不到**返回值 —— 宿主的工具管线会用 `Error: tool call aborted`
   覆盖它，所以磁盘记录是唯一的账（红线 **B28**）。
   真机证据（同一条命令跑了两次，两次结论相反，这就是设计改动的对照）：改之前按停止 —— 4 个 trial 的
@@ -140,6 +140,20 @@ typecheck / 测试 / `check:release` —— 那些归 `check` 与 CI，一次提
 - **附件的第二条边界也验了**（2026-11-11 晚，**真机验过**）：`deepseek-official/deepseek-v4-pro`
   是 `input text`，带图开跑被**开跑前**拒掉，文案是「does not declare image input … would replace every
   image with a placeholder line」，且 `runs/` 与 attachments 目录都没多出新文件（B27 / B3）。
+- **第一次当使用者走了一遍**（2026-11-12，**真机验过**）：只给阅读工具的 harness 挂 4 个工具、跑
+  「改一个文件」的题，4 个 trial 全部读完即拒、文件未动；换回含 `write`/`edit` 的同一份文件则真的改成功
+  —— 装配确实是变量。同批撞到并修掉四处：`DEFAULT_TOOLS` 因 `fs-search` 的必填 config 整份挂不上
+  （**B33** 附近，`catalog.ts` 已补）、`tools: []` 被拒却印着"这样就能消融"的自相矛盾文案（**B33**）、
+  `never started` 三个字没有原因（**B34**）、`reasoningEffort`/`maxTokens` 只能读不能设（**B35**）。
+  一并确认：**`sealed` 只遮工具表，不遮上下文** —— 只读受试体的 prompt 里仍有终端 / present / MCP 的
+  指导段，它自己都指出了这个矛盾。这条不是缺陷（宿主没有遮提示段的 API），是结论里必须声明的约束。
+- **生成控制确实到得了受试体**（2026-11-12，**真机验过**）：`reasoning_effort: high` + `max_tokens: 500`
+  的 trial，记录里 `stimulus.route` 与 `modelInput.route` **逐字相等**（改前这里是适配器默认的
+  `384000`）。反向控制同一批做了：`reasoning_effort: low` 被宿主拒 ——
+  `UNSUPPORTED_REASONING_EFFORT`，trial 记成 `stopReason: "error"`，说明参数不是装饰。
+  两条附带事实：**`applyConfiguredRoute` 只认「provider + model 都在」的 route**，所以只有 effort 会被
+  静默丢掉（`resolveRoute` 因此拒绝它，红线 **B35**）；该错误只进了 `events.jsonl` 的 `turn/end`，
+  `diagnostic` 是空的 —— 归 B30 的老账（原始层有，聚合层没有）。
 - **没验的**：无。
 
 ## 待办
@@ -214,13 +228,14 @@ skill 还在教人去找）、`output` 不截断这件事（改动说明不是�
 | 一个词指两个量（`digest`） | 文件摘要与刺激指纹都是 8 位十六进制，读者会以为文件被改过 | 各自命名：`file digest` / `fingerprint`，红线 **B25** |
 | 以为 `job.append` 的内容模型能看到 | 宿主的 `log` 通道**只给观察者**：逐 trial 行写进去，`job_output` 一个字都读不到 | 要模型读就别带通道标签，红线 **B26** |
 | 后台 run 用工具调用的 `signal` 收尾 | 调用已经返回，信号作废，`job_kill` 停不下来 | job 里用自己的 `AbortController`，红线 **B26** |
-| 以为子 agent 会被父 agent 的停止带走，或者反过来以为它一定不会被带走 | 它有自己的 Session 与 turn，**什么都不会自动传下去**：既不自动被停，也不自动被放过 —— 两种行为都得**我们**做 | 一次停止就 `dispose()` 在飞的那个；只想丢一个 trial 请用子会话的中断，红线 **B28** |
+| 以为子 agent 会被父 agent 的停止带走，或者反过来以为它一定不会被带走 | 它有自己的 Session 与 turn，**什么都不会自动传下去**：既不自动被停，也不自动被放过 —— 两种行为都得**我们**做 | 一次停止就 `dispose()` 在飞的那个；只想丢一个 trial 请用该子 Session 的中断，红线 **B28** |
 | 以为被停的工具调用能返回自己的结果 | 宿主管线在取消后用 `Error: tool call aborted` **覆盖**工具结果，所以前台被停之后**只有磁盘记录**，别在文档里承诺"返回部分摘要" | 摘要只对后台 job 成立，红线 **B28** |
 | 以为图片附件一定会进上下文 | 模型不声明 `image` 输入时，宿主把它**换成一行占位文本且不报错** —— 一次没看到图的 trial，记录看起来正常 | 开跑前查受试体自己的路由，不支持就拒，红线 **B27** |
 | 以为文件附件会把内容发过去 | 宿主**永远不发文件字节**，只发一行"有个文件、多大、只读副本在 X"；受试体没有文件工具就白给 | 参数描述里写明这是"路径句柄"，红线 **B27** |
 | PowerShell 往返改文件 | 改坏字符，类型检查只抓到一部分 | 只用编辑工具 |
 | `check` 全绿 ≠ 插件能起来 | 加载期不被单测覆盖 | 真机跑一次 |
 | 一次「看起来跑过了」的空实验 | 比一次报错贵得多 | 挂载 + 审计 + 探针在 trial 之前；红线 B5/B6 |
+| 把宿主包的 config 当成一次写好的常量 | 宿主把某个字段改成必填，`catalog.ts` 里那份副本就过期，于是**默认工具集整份挂不上**（2026-11-12 实测：`fs-search` 的 `sampleOverCapGlobResults`，`DEFAULT_TOOLS` 与 `{ persona }` 两个入口同时死） | 升级 `engines.dsh` 时逐个核在跑版 `.d.ts`；红线只钉「名字对得上」，钉不住 schema，所以这条靠人 |
 
 ## 改动影响路由
 
