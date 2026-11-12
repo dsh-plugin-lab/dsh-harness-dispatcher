@@ -92,7 +92,28 @@ export const ROUTE_PARAMETERS = {
       'That call can be slow; the bare listing cannot.',
   },
   model: { type: 'string', description: 'Model route override; supply together with provider.' },
-  max_depth: { type: 'number', description: 'Delegation budget granted to the subject.' },
+  reasoning_effort: {
+    type: 'string',
+    description:
+      'Adapter-owned reasoning effort for the subject, e.g. "high" or "low" — the identifier the ' +
+      'route itself accepts. Requires `provider` and `model`: the host applies a generation control ' +
+      'only to a route it selects, so an effort alone is refused rather than silently dropped. Part ' +
+      'of the stimulus, so "same model, lower effort" is a comparable experiment.',
+  },
+  max_tokens: {
+    type: 'number',
+    description:
+      'Maximum output tokens per subject request. Requires `provider` and `model`, for the same ' +
+      'reason. Absent inherits from the delegating agent; there is no value meaning "unlimited", ' +
+      'because a cap of 0 would cut the subject off at the first token.',
+  },
+  max_depth: {
+    type: 'number',
+    description:
+      'Caps how deep this subject may be started (>= 1). It does not let the subject delegate deeper: ' +
+      "that is its own `tool-subagent` row's `maxDepth`, which the tool applies to the children it " +
+      'starts.',
+  },
 } as const satisfies ParameterSchemaSpec
 
 /** The attachments parameter, shared so the two kinds are described once. */
@@ -174,6 +195,8 @@ export interface HarnessArgs {
   }
   readonly provider?: string | undefined
   readonly model?: string | undefined
+  readonly reasoning_effort?: string | undefined
+  readonly max_tokens?: number | undefined
   readonly max_depth?: number | undefined
 }
 
@@ -211,6 +234,8 @@ export function harnessInputOf(args: HarnessArgs): HarnessInput {
     harness: selection,
     ...(args.provider === undefined ? {} : { provider: args.provider }),
     ...(args.model === undefined ? {} : { model: args.model }),
+    ...(args.reasoning_effort === undefined ? {} : { reasoningEffort: args.reasoning_effort }),
+    ...(args.max_tokens === undefined ? {} : { maxTokens: args.max_tokens }),
     ...(args.max_depth === undefined ? {} : { maxDepth: args.max_depth }),
   }
 }

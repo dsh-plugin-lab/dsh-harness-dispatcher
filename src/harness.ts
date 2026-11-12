@@ -99,14 +99,32 @@ export interface HarnessInput {
   /** Request-level route override; both `null` means "inherit from the delegating parent". */
   readonly provider?: string | undefined
   readonly model?: string | undefined
+  /**
+   * Request-level generation controls, siblings of the route for the same reason it is one.
+   *
+   * They are the other half of "how the subject was asked": the host's `AgentOptions` carries
+   * `reasoningEffort` and `maxTokens` beside `provider`/`model`, and a comparison that holds the model
+   * fixed while moving its effort is a standard ablation this bench could not express until now.
+   * `null` inherits, so an omitted value changes nothing.
+   */
+  readonly reasoningEffort?: string | undefined
+  readonly maxTokens?: number | undefined
   /** Delegation budget granted to the subject, i.e. `request.maxDepth`. */
   readonly maxDepth?: number | undefined
 }
 
-/** Model route override. Both `null` means "inherit from the delegating parent". */
+/**
+ * How the subject was asked: the route, plus the two generation controls the host keeps beside it.
+ *
+ * All `null` means "inherit from the delegating parent". The four travel together because the host's own
+ * `AgentOptions` is exactly these four fields — splitting them would make the record describe a request
+ * the host cannot send.
+ */
 export interface Route {
   readonly provider: string | null
   readonly model: string | null
+  readonly reasoningEffort: string | null
+  readonly maxTokens: number | null
 }
 
 /** Deployment defaults and where authored harness files live. */
@@ -217,6 +235,12 @@ export async function resolveHarness(
   const fingerprint = digestText(
     `harness=${captured.digest}` +
       `|route=${route.provider ?? '-'}/${route.model ?? '-'}` +
+      // The generation controls are inside the identity for the same reason `sealed` is: they are
+      // request-level switches that change what the subject receives, so two runs that differ only here
+      // are two experiments. Measured 2026-11-12 — the same harness under two efforts shared one
+      // fingerprint before this line existed.
+      `|effort=${route.reasoningEffort ?? '-'}` +
+      `|maxTokens=${route.maxTokens === null ? '-' : String(route.maxTokens)}` +
       `|maxDepth=${String(maxDepth)}` +
       `|sealed=${String(sealed)}`,
   )
@@ -286,7 +310,37 @@ function resolveRoute(input: HarnessInput): Route {
   if ((provider === null) !== (model === null)) {
     throw new HarnessSpecError('provider and model must be supplied together or omitted together')
   }
-  return { provider, model }
+  const reasoningEffort =
+    input.reasoningEffort?.trim() === '' ? null : (input.reasoningEffort?.trim() ?? null)
+  const maxTokens = resolveMaxTokens(input.maxTokens)
+  // The host applies a generation control only to a route it selects: `applyConfiguredRoute` returns
+  // early unless both provider and model are present. A control accepted here and dropped there would be
+  // the silent kind of wrong, so it is refused here instead. Measured 2026-11-12.
+  if (provider === null && (reasoningEffort !== null || maxTokens !== null)) {
+    throw new HarnessSpecError(
+      'reasoning_effort and max_tokens need a route: name `provider` and `model` as well, because the ' +
+        'host applies a generation control only to a route it can select. Leaving all four unset ' +
+        "inherits the parent's route and its controls.",
+    )
+  }
+  return { provider, model, reasoningEffort, maxTokens }
+}
+
+/**
+ * Validate the output-token ceiling.
+ *
+ * Zero and negatives are not "no limit" — the host would send them as a cap and the subject would be cut
+ * off at the first token. Absent is the only way to say "inherit".
+ * @param given - the caller's value, if any.
+ * @returns the value, or `null` when omitted.
+ * @throws {HarnessSpecError} when it is not a positive integer.
+ */
+function resolveMaxTokens(given: number | undefined): number | null {
+  if (given === undefined) return null
+  if (!Number.isSafeInteger(given) || given < 1) {
+    throw new HarnessSpecError('max_tokens must be a positive integer, or omitted to inherit')
+  }
+  return given
 }
 
 function resolveMaxDepth(given: number | undefined, fallback: number): number {

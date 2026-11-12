@@ -209,6 +209,66 @@ interface SkillSummary {
 }
 
 /**
+ * One sentence of next step for the diagnosis the host gives for a row that never started.
+ *
+ * `never started` is the host's whole answer when a row's module could not be resolved, and it names no
+ * cause: measured 2026-11-12, a harness file kept inside this repository (whose `node_modules` has no
+ * `dsh-tool-*` packages) produced exactly `tool-fs (@deepseek-ai/dsh-tool-fs): never started` for every
+ * row. The one fact that turns that into a fix is *where bare module names resolve*, and only the
+ * operator knows where the file lives — so the hint names both candidates.
+ *
+ * Pure, so the wording is testable without a host, and deliberately narrow: a diagnosis that already
+ * names its cause gets nothing appended.
+ * @param broken - the registry's diagnosis.
+ * @returns a leading-newline sentence, or `''` when the diagnosis explains itself.
+ */
+export function mountFailureHint(broken: string): string {
+  if (!broken.includes('never started')) return ''
+  return (
+    '\nA row that "never started" is one whose module could not be resolved from its harness file. ' +
+    'Bare `@deepseek-ai/…` names resolve only inside a profile tree or a linked package, so a harness ' +
+    'file kept elsewhere (a project directory with its own node_modules) mounts nothing — pass an ' +
+    'absolute `file:` path to the package entry, or put the harness file where that package resolves.'
+  )
+}
+
+/**
+ * What to say about a harness that makes no tool callable.
+ *
+ * Two cases that used to share one rejection, and the split is the point: a file whose tool rows were
+ * all denied by the profile is a **configuration error** (the operator expected tools and got none),
+ * while a harness that declares no tool row at all is a **legitimate ablation** — "what does the model
+ * answer with no tools" is an experiment, and the shortcut's own comment already claimed to allow it
+ * while the code threw. Measured 2026-11-12: `tools: []` was refused, and a persona-only file was
+ * refused too, so neither could be run.
+ *
+ * The discriminator is observable rather than declared, because a harness's rows are what the registry
+ * reports: a disabled row means something was declared and did not contribute.
+ * @param surface - the observed surface.
+ * @returns a blocking problem, or an advisory warning, or neither.
+ */
+export function emptySurfaceVerdict(surface: CapabilitySurface): {
+  problem: string | null
+  warning: string | null
+} {
+  if (surface.tools.length > 0) return { problem: null, warning: null }
+  if (surface.rows.some((row) => row.enabled === false)) {
+    return {
+      problem:
+        'this harness mounted but makes no tool callable: it declares tool rows and the profile does ' +
+        'not admit any of them, so the subject would be recorded as unable to act',
+      warning: null,
+    }
+  }
+  return {
+    problem: null,
+    warning:
+      'this harness declares no tool row, so the subject can call nothing. That is a legitimate ' +
+      'ablation (the answer comes from the prompt alone) and the record says `surface.tools: []`',
+  }
+}
+
+/**
  * Register, audit and probe one harness.
  *
  * @param ctx - context owning the registration; disposing it unmounts via Cordis too.
@@ -229,7 +289,8 @@ export async function mountSubject(ctx: Context, plan: SubjectPlan): Promise<Sub
     const health = await presets.resolve(plan.presetId)
     if (health.broken !== undefined) {
       throw new HarnessSpecError(
-        `this harness cannot be mounted, so no trial can run:\n${health.broken}`,
+        `this harness cannot be mounted, so no trial can run:\n${health.broken}` +
+          mountFailureHint(health.broken),
       )
     }
     const observed = await surfaceOf(ctx, plan.presetId)
@@ -239,7 +300,9 @@ export async function mountSubject(ctx: Context, plan: SubjectPlan): Promise<Sub
       tools: reachableTools(observed.tools, plan.denied ?? []),
       skills: observed.skills,
     }
-    assertUsable(surface)
+    // Blocking only when rows were declared and none survived; a declared-empty harness is an ablation.
+    const verdict = emptySurfaceVerdict(surface)
+    if (verdict.problem !== null) throw new HarnessSpecError(verdict.problem)
     return { presetId: plan.presetId, surface, dispose: unregister }
   } catch (error) {
     // A harness that failed the gate must not leave a Loader tree behind.
@@ -312,20 +375,6 @@ async function loadableSkills(
     .filter((skill) => skill.invocation.modelInvocable)
     .map((skill) => skill.name)
     .sort()
-}
-
-/**
- * Reject a harness that mounted but cannot be the subject of a run.
- * @param surface - the observed surface.
- * @throws {HarnessSpecError} when it makes no tools callable at all.
- */
-function assertUsable(surface: CapabilitySurface): void {
-  if (surface.tools.length === 0) {
-    throw new HarnessSpecError(
-      'this harness mounted but makes no tool callable: ' +
-        'either it declares no tool row, or the profile does not admit the ones it declares',
-    )
-  }
 }
 
 /**

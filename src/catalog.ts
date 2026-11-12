@@ -46,6 +46,11 @@ export const TOOL_CATALOG: Readonly<Record<string, CatalogEntry>> = {
   },
   'fs-search': {
     name: '@deepseek-ai/dsh-tool-fs-search',
+    // Required by the package's own `Config` on host 0.2.2-rc.1, and it has no default: a row that
+    // omits it does not mount at all (`$.sampleOverCapGlobResults missing required value`). Measured
+    // 2026-11-12 — it made `DEFAULT_TOOLS`, and therefore the bare `{ persona }` shortcut, unusable.
+    // `false` is the shipping presets' value: over-cap pages take the modification-time head.
+    config: { sampleOverCapGlobResults: false },
     summary: 'grep and glob across the workspace',
     furnishes: ['grep', 'glob'],
   },

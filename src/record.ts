@@ -28,6 +28,22 @@ import type { CapabilitySurface } from './subject.ts'
 /** Why a trial's run ended, as the subagent runtime reports it. */
 export type TrialStopReason = 'completed' | 'aborted' | 'error' | 'max-tokens' | 'refusal'
 
+/**
+ * How the subject was asked, as the stimulus holds it.
+ *
+ * These four are the host's own `AgentOptions`, and they are recorded rather than only hashed because a
+ * person reads a record and a script groups by a fingerprint. **`null` on a field means "inherited from
+ * the delegating agent"** — not "defaulted", which only the host decides. `route` itself is `null` when
+ * nothing was overridden, so "asked the parent's way" and "asked this way" cannot be confused.
+ */
+export interface StimulusRoute {
+  /** Both `null` or both set: the host takes a provider and a model together. */
+  readonly provider: string | null
+  readonly model: string | null
+  readonly reasoningEffort: string | null
+  readonly maxTokens: number | null
+}
+
 /** The stimulus one trial was run under, at the identity level. */
 export interface StimulusRecord {
   /** Machine identity of the stimulus: harness digest + route + depth + sealed. Faults are outside it. */
@@ -41,7 +57,13 @@ export interface StimulusRecord {
     /** Digest of the captured bytes. */
     readonly digest: string
   }
-  readonly route: { readonly provider: string; readonly model: string } | null
+  /**
+   * How the subject was asked. Always present; each field is `null` when it was inherited.
+   *
+   * Present even when nothing was overridden, because the four controls are not one switch: an effort
+   * can be set on the parent's own route, and a nullable object would have had to drop it.
+   */
+  readonly route: StimulusRoute
   readonly maxDepth: number
   /**
    * Whether the harness replaced the host's tool set or added to it.
@@ -195,9 +217,12 @@ export interface RunHandle {
  * exactly the runs a reader would compare. **6 put `sealed` into the stimulus identity**, because the
  * fingerprint had been hashing the harness bytes, the route and the depth while omitting a
  * request-level switch that changes the subject's tool set from 4 tools to 41 — so a 5 file's
- * fingerprint can say "same stimulus" about two runs that are not.
+ * fingerprint can say "same stimulus" about two runs that are not. **7 widened `route` to the host's
+ * four `AgentOptions` and put the two generation controls into the fingerprint**: a 6 file's `route` is
+ * `null` whenever only an effort or a token ceiling was overridden, so its fingerprint cannot separate
+ * "same model, lower effort" from "same model" at all.
  */
-const RECORD_SCHEMA = 6
+const RECORD_SCHEMA = 7
 
 /** The note a reader finds first. Short on purpose: it answers "which field do I compare?" */
 const README = `This directory is one benchmark run.
@@ -212,21 +237,31 @@ const README = `This directory is one benchmark run.
                   Written unless the caller turns it off.
 
 How to read it
-  1. Compare runs by stimulus.fingerprint, never by file names. Two runs with the
-     same fingerprint applied the same harness on the same route, at the same depth,
-     sealed the same way; two with different fingerprints did not, whatever their file
-     names say. stimulus.sealed says the same thing in words.
-  2. host says what the HOST computed (timing, tokens, context pressure, policy,
-     compaction-adjacent counters) and is copied from its projections unchanged.
-     modelInput says what the subject WAS GIVEN.  trace says what it DID, and holds
-     only the three numbers no host projection gives.
-  3. Nothing here is a score, and no statistics are computed: group and average
-     outside, with whatever method your study needs. events.jsonl is what makes that
-     possible — a record can be re-folded under a definition this plugin never had.
-  4. Task attachments (run.json, task.attachments) are identified, not copied: the
-     bytes live in the host attachment store under that id. An image only reached the
-     subject if its route declared image input; a file always arrives as a handle
-     line naming a read-only path, never as contents.
+  - One line per trial is large (a few KB), so a line-oriented viewer truncates it. Ask
+    for the fields instead:
+      jq -c '{trial,stopReason,wallMs,n:.trace.toolCalls,err:.trace.toolErrors}' trials.jsonl
+      Get-Content trials.jsonl | % { $_ | ConvertFrom-Json } | ft trial,stopReason,wallMs
+  - Compare runs by stimulus.fingerprint, never by file names. Two runs with the
+    same fingerprint applied the same harness on the same route (provider, model,
+    effort, token ceiling), at the same depth, sealed the same way; two with different
+    fingerprints did not, whatever their file names say. stimulus.sealed and
+    stimulus.route say the same thing in words.
+  - host says what the HOST computed (timing, tokens, context pressure, policy,
+    compaction-adjacent counters) and is copied from its projections unchanged.
+    modelInput says what the subject WAS GIVEN.  trace says what it DID, and holds
+    only the three numbers no host projection gives.
+    The system prompt the subject actually received is in events.jsonl
+    (system/message): sealed controls the tool table, not the context, so host prompt
+    sections and injected user messages reach the subject either way.
+  - host.agentPreset is this run's preset identity: a temporary mount, not a preset
+    that ships with the host.
+  - Nothing here is a score, and no statistics are computed: group and average
+    outside, with whatever method your study needs. events.jsonl is what makes that
+    possible — a record can be re-folded under a definition this plugin never had.
+  - Task attachments (run.json, task.attachments) are identified, not copied: the
+    bytes live in the host attachment store under that id. An image only reached the
+    subject if its route declared image input; a file always arrives as a handle
+    line naming a read-only path, never as contents.
 
 A harness file is copied verbatim into this directory, so never put credentials in one.
 events.jsonl holds prompts and model output as the subject saw them; redact before sharing.
@@ -342,10 +377,12 @@ export function stimulusRecord(harness: ResolvedHarness, faults: readonly Fault[
       fileName: captured.fileName,
       digest: captured.digest,
     },
-    route:
-      harness.route.provider === null || harness.route.model === null
-        ? null
-        : { provider: harness.route.provider, model: harness.route.model },
+    route: {
+      provider: harness.route.provider,
+      model: harness.route.model,
+      reasoningEffort: harness.route.reasoningEffort,
+      maxTokens: harness.route.maxTokens,
+    },
     maxDepth: harness.maxDepth,
     sealed: harness.sealed,
     faults,

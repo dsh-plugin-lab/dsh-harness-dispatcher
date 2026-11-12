@@ -51,8 +51,13 @@ describe('the shortcut', () => {
     expect(normalizeShortcut({ tools: ['fs', 'fs'] }, DEFAULTS, CATALOG).tools).toEqual(['fs'])
   })
 
-  it('refuses an empty tool set unless it is asked for explicitly', () => {
-    expect(() => normalizeShortcut({ tools: [] }, DEFAULTS, CATALOG)).toThrow(/at least one tool/)
+  it('accepts an explicitly empty tool set, because a zero-tool subject is an ablation', () => {
+    // It used to throw while the comment above it called an empty tool set legitimate — so the advice it
+    // printed ("pass tools explicitly to ablate") failed when followed. Whether a mounted harness with
+    // no tools is a mistake or an endpoint is decided where the surface is observed, not here.
+    const spec = normalizeShortcut({ tools: [] }, DEFAULTS, CATALOG)
+    expect(spec.tools).toEqual([])
+    expect(shortcutRows(spec)).toEqual([])
   })
 
   it('puts the persona row before every tool row', () => {

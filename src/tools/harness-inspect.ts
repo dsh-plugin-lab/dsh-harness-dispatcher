@@ -29,6 +29,7 @@ import type { ResolveDeps } from '../harness.ts'
 import { harnessLabel, mountRows, resolveHarness, sourcePathOf } from '../harness.ts'
 import {
   SKILL_TOOL,
+  emptySurfaceVerdict,
   hostToolNames,
   mountSubject,
   presetIdFor,
@@ -522,7 +523,7 @@ async function inspect(
     return {
       surface,
       problems: routeProblem === undefined ? [] : [routeProblem],
-      warnings: rowWarnings(surface),
+      warnings: advisoryOf(surface),
       target: { kind: 'preset', label: args.preset },
     }
   }
@@ -540,7 +541,7 @@ async function inspect(
     return {
       surface: subject.surface,
       problems: routeProblem === undefined ? [] : [routeProblem],
-      warnings: rowWarnings(subject.surface),
+      warnings: advisoryOf(subject.surface),
       target: {
         kind: 'harness',
         label: harnessLabel(captured),
@@ -555,6 +556,21 @@ async function inspect(
       ctx.logger.warn(`harness_inspect: failed to unmount: ${String(error)}`)
     })
   }
+}
+
+/**
+ * Everything advisory about one surface: dead rows, and a harness that calls nothing by declaration.
+ *
+ * Both are "it mounts and this is how much of it works", so they share a channel; the blocking
+ * counterpart is {@link emptySurfaceVerdict}'s `problem`, which a mount raises rather than a probe.
+ * @param surface - the observed surface.
+ * @returns the warning lines.
+ */
+function advisoryOf(surface: CapabilitySurface): string[] {
+  const warnings = rowWarnings(surface)
+  const declaredEmpty = emptySurfaceVerdict(surface).warning
+  if (declaredEmpty !== null) warnings.push(declaredEmpty)
+  return warnings
 }
 
 /**

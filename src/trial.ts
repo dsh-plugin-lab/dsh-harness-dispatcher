@@ -15,8 +15,8 @@
  * @module dsh-harness-dispatcher/trial
  */
 
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
+import type { ContentBlock, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import { onceAborted } from './abort.ts'
@@ -38,7 +38,13 @@ export interface TrialPlan {
   readonly outputSchema: ObjectJsonSchema | null
   readonly timeoutMs: number | null
   readonly maxDepth: number
-  readonly route: { readonly provider: string; readonly model: string } | null
+  /**
+   * The route as the record holds it, so the request and the evidence come from one value.
+   *
+   * Read straight off `StimulusRecord.route` rather than a second shape: a trial that sent something the
+   * record did not name is how "the fingerprint is the stimulus" stops being true.
+   */
+  readonly route: StimulusRecord['route']
   readonly faults: readonly Fault[]
   /** Keep the subject's committed events verbatim in the run directory. Defaults to on. */
   readonly recordEvents: boolean
@@ -103,6 +109,28 @@ export function stoppedByBudget(
 }
 
 /**
+ * The host's `AgentOptions` for one route, or `undefined` when nothing was overridden.
+ *
+ * One translation, so the request the subject receives and the route the record names cannot drift. The
+ * effort is cast rather than wrapped: `ReasoningEffortId()` is a compile-time brand with no validation
+ * (the package says so), so wrapping would add a runtime dependency on `@deepseek-ai/dsh-llm` to produce
+ * a string that is already correct.
+ * @param route - the resolved route.
+ * @returns the options, carrying only the fields that were actually given.
+ */
+function optionsOf(route: StimulusRecord['route']): AgentOptions | undefined {
+  const options: AgentOptions = {
+    ...(route.provider === null ? {} : { provider: route.provider }),
+    ...(route.model === null ? {} : { model: route.model }),
+    ...(route.reasoningEffort === null
+      ? {}
+      : { reasoningEffort: route.reasoningEffort as ReasoningEffortId }),
+    ...(route.maxTokens === null ? {} : { maxTokens: route.maxTokens }),
+  }
+  return Object.keys(options).length === 0 ? undefined : options
+}
+
+/**
  * Run one trial against the mounted harness and append its record.
  *
  * @param deps - the runtime seams.
@@ -127,6 +155,7 @@ export async function runTrial(
   const trialSignal = budget === undefined ? signal : AbortSignal.any([signal, budget])
   const startedAt = Date.now()
 
+  const options = optionsOf(plan.route)
   const activation = await deps.subagents.startActivation({
     provider: 'spawn',
     label: `${plan.taskId} #${String(index)}`,
@@ -139,9 +168,10 @@ export async function runTrial(
       agentPreset: plan.presetId,
       maxDepth: plan.maxDepth,
       ...(plan.cwd === null ? {} : { cwd: plan.cwd }),
-      ...(plan.route === null
-        ? {}
-        : { agentOptions: { provider: plan.route.provider, model: plan.route.model } }),
+      // The host selects a route before it applies a generation control: `applyConfiguredRoute` returns
+      // early unless both provider and model are present, so `resolveRoute` refuses a control without a
+      // route rather than letting it be silently dropped here.
+      ...(options === undefined ? {} : { agentOptions: options }),
       ...(plan.outputSchema === null ? {} : { outputSchema: plan.outputSchema }),
     },
   })

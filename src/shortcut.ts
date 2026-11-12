@@ -85,13 +85,12 @@ export function normalizeShortcut(
   // owned by `shortcutRows` (persona first, then tools), so two shortcuts naming the same tools must
   // produce the same harness and the same digest.
   const tools = [...new Set(input.tools ?? defaults.tools)].sort()
-  if (tools.length === 0) {
-    // An empty tool set is a legitimate ablation, but it must be asked for explicitly rather than
-    // arriving as the result of a typo that emptied a default.
-    throw new ShortcutError(
-      'a harness must offer at least one tool; pass tools explicitly to ablate',
-    )
-  }
+  // `tools: []` is accepted, and that is a correction: this function used to throw while the comment
+  // right above it called an empty tool set "a legitimate ablation", so the advice it gave ("pass tools
+  // explicitly to ablate") failed when followed. What a zero-tool harness *is* — an endpoint, not a
+  // mistake — is decided where the surface is observed, not here: `emptySurfaceVerdict` in
+  // [subject.ts](subject.ts) blocks a harness whose rows were all denied and warns about one that
+  // declares none. Measured 2026-11-12.
   const unknown = tools.filter((key) => !vocabulary.keys.has(key))
   if (unknown.length > 0) {
     throw new ShortcutError(

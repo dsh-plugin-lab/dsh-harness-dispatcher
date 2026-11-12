@@ -29,7 +29,14 @@ import { modelLines } from '../src/tools/harness-inspect.ts'
 import { ATTACHMENTS_PARAMETER } from '../src/tools/params.ts'
 import { stimulusRecord } from '../src/record.ts'
 import { summaryLine } from '../src/run.ts'
-import { presetIdFor, presetSummaries, reachableTools, rowWarnings } from '../src/subject.ts'
+import {
+  emptySurfaceVerdict,
+  mountFailureHint,
+  presetIdFor,
+  presetSummaries,
+  reachableTools,
+  rowWarnings,
+} from '../src/subject.ts'
 import { toolSpecOf } from '../src/tool.ts'
 import { stoppedByBudget } from '../src/trial.ts'
 
@@ -1052,8 +1059,10 @@ describe('B25 — a verdict names the thing it measured', () => {
     expect(code).toMatch(/warnings: \[\.\.\.facts\.warnings\]/)
     expect(code).toContain('`Problems:')
     expect(code).toContain('`Warnings:')
-    // A row that mounted disabled lives in the warning list by construction.
-    expect(code).toMatch(/warnings: rowWarnings\(/)
+    // A row that mounted disabled lives in the warning list by construction, and so does a harness that
+    // declares no tool row: one channel for "it mounts, this is how much of it works".
+    expect(code).toMatch(/warnings: advisoryOf\(/)
+    expect(code).toContain('emptySurfaceVerdict(')
   })
 
   it('names the file digest and the fingerprint differently', () => {
@@ -1332,12 +1341,57 @@ describe('B22 — the skill is one page, and it says everything once', () => {
    * a checklist of the facts, each of which was learned the hard way.
    *
    * The body is a file, so these assertions read the shipped artifact rather than a copy of it.
+   *
+   * **Matching is done on `flat`, not on `body`.** These assertions ask whether the prose *states* a
+   * fact; they must not also dictate where the author puts a line break. Asserting against `body` made
+   * every reflow a failure and pushed the writing toward long unwrapped lines — a test shaping prose it
+   * was only meant to check.
    */
-  const body = readFileSync(join(ROOT, 'skills', SKILL_NAME, 'SKILL.md'), 'utf8')
+  /**
+   * Characters the host wraps around a skill body before it becomes a tool result — counted, not guessed,
+   * from `renderSkillContent` in `@deepseek-ai/dsh-skill`: `<skill_content>`, `<skill_resources>`,
+   * `<skill_instructions>` and their closers, newline-joined, with no resources shipped here.
+   */
+  const SKILL_WRAPPER_CHARS = 143
+  /**
+   * The standard preset's tool-result pruner budget, in code points.
+   *
+   * Not a style number: `dsh-compaction-tool-result-pruner` replaces the middle of any tool result over
+   * `thresholdChars` (default 8192) with a prune marker. A loaded skill *is* a tool result, so a longer
+   * body loses its middle the first time compaction fires.
+   */
+  const PRUNER_THRESHOLD_CHARS = 8192
 
-  it('stays under the host prune threshold, and carries the idea rather than an outline', () => {
-    // Above 8192 the standard preset's tool-result pruner trims the body mid-sentence.
-    expect(body.length).toBeLessThan(8192)
+  const raw = readFileSync(join(ROOT, 'skills', SKILL_NAME, 'SKILL.md'), 'utf8')
+  /** The text the model actually receives: frontmatter is metadata and never reaches `content`. */
+  const skillBody = splitFrontmatter(raw)?.body ?? ''
+  const flat = skillBody.replaceAll(/\s+/g, ' ')
+
+  it('stays inside the host pruner budget, measured the way the host measures', () => {
+    /**
+     * Two corrections to the earlier check, both measured 2026-11-12, and together they are why this
+     * assertion reads differently rather than merely higher:
+     *
+     * 1. The host counts **code points** (`codePointLength` in the pruner), not `String.length`, so the
+     *    unit has to match or the budget silently differs on astral characters.
+     * 2. The host prunes the **rendered** tool result. Charging the ~494 frontmatter points — which never
+     *    become content — against that budget made the redline stricter than the runtime and pushed the
+     *    writing into compressing text that had room to breathe.
+     *
+     * Pruning is also conditional (compaction pressure or context overflow), so this is a soft risk
+     * rather than a hard ceiling — but the number is the host's, and widening it would only move the
+     * cliff off the redline and onto the runtime.
+     */
+    // The frontmatter really is excluded: otherwise this measures the file, not what the reader gets.
+    expect(Array.from(skillBody).length).toBeLessThan(Array.from(raw).length)
+    const rendered = Array.from(skillBody).length + SKILL_WRAPPER_CHARS
+    expect(
+      rendered,
+      `the rendered skill is ${String(rendered)} code points against a ${String(PRUNER_THRESHOLD_CHARS)} budget`,
+    ).toBeLessThan(PRUNER_THRESHOLD_CHARS)
+  })
+
+  it('carries the idea rather than an outline', () => {
     /**
      * Deliberately not an outline check. Pinning section titles meant any reorganisation broke the test
      * while proving nothing — a skill can keep every heading and lose the point. What a reader has to come
@@ -1349,19 +1403,22 @@ describe('B22 — the skill is one page, and it says everything once', () => {
       /record is the deliverable/i, // not a score: analysis changes, the raw layer must outlive it
       /judges nothing/i, // the verdict belongs to the reader
     ]) {
-      expect(body, `the skill no longer says ${String(idea)}`).toMatch(idea)
+      expect(flat, `the skill no longer says ${String(idea)}`).toMatch(idea)
     }
   })
 
   it('keeps every fact that costs an experiment when missed', () => {
     for (const fact of [
       /no arguments/, // discovery comes first: without an id nothing else works
-      /`image`\s+\n?\s*input/, // the route must declare it, or the image is swapped for a placeholder
+      /`image` input/, // the route must declare it, or the image is swapped for a placeholder
       /CATALOGUE KEYS/,
       /MODEL-FACING TOOL NAMES/,
       /fingerprint/,
       /sealed: true/,
       /cannot mask/, // skills: the one thing sealing does not cover
+      /tool table, not the context/, // sealing masks tools, not the prompt the subject receives
+      /catalogue key is a package/, // `fs` is a package, not a single-tool switch
+      /working directory changed/, // a different cwd injects a `user` message: the context moves too
       /dsh-harness-dispatcher\/tool/, // a tool can be defined or replaced in the file
       /\.\/mine\.js/, // a row may name a path: your own code is a harness variable too
       /not\*\* the package or file/, // so editing that file is invisible to the fingerprint
@@ -1374,7 +1431,7 @@ describe('B22 — the skill is one page, and it says everything once', () => {
       /attachments/, // a task can carry a picture or a file, and the two are different experiments
       /placeholder line/, // an image the route cannot deliver is refused, not silently swapped
     ]) {
-      expect(body, `the skill no longer states ${String(fact)}`).toMatch(fact)
+      expect(flat, `the skill no longer states ${String(fact)}`).toMatch(fact)
     }
   })
 
@@ -1400,7 +1457,8 @@ describe('B22 — the skill is one page, and it says everything once', () => {
       ['a prefix warning is a changelog line, not a usage fact', /stored \*\*whole\*\*/],
       ['directory size is a maintenance observation', /dominates the directory/],
     ] as const) {
-      expect(body, `the skill carries ${why}`).not.toMatch(phrase)
+      // Same normalization as above: a banned fact is banned wherever the author wraps it.
+      expect(flat, `the skill carries ${why}`).not.toMatch(phrase)
     }
     // Not dropped — relocated. The knowledge has one home, and it is the maintainer's.
     const root = readFileSync(join(ROOT, 'AGENTS.md'), 'utf8')
@@ -1420,6 +1478,11 @@ describe('B22 — the skill is one page, and it says everything once', () => {
     expect(frontmatter?.fields.get('name')).toBe(SKILL_NAME)
     const description = frontmatter?.fields.get('description') ?? ''
     expect(description.length).toBeGreaterThan(40)
+    // A description is a *routing signal*, not a feature list: it is what a model reads to decide whether
+    // to load this skill at all, and it is paid on every turn that could have used it. So it says what the
+    // skill is for and when to reach for it; the mechanism belongs in the body, which is only loaded once
+    // the reader has already decided. Growth past this ceiling is how a description turns into an outline.
+    expect(description.length).toBeLessThan(420)
     // A block scalar would register the literal ">-" as the only routing signal the model gets.
     expect(description.startsWith('>')).toBe(false)
     expect(description.startsWith('|')).toBe(false)
@@ -1826,6 +1889,157 @@ describe('B30 — what the host already computed is copied, not recomputed', () 
     const tool = stripComments(sources().get('src/tools/harness-run.ts') ?? '')
     // Default on, and the default is spelled out rather than left to a schema default.
     expect(tool).toContain('args.record_events ?? true')
+  })
+})
+
+describe('B33 — the zero-tool subject is reachable, and a denied one is not silent', () => {
+  /**
+   * Measured 2026-11-12: `tools: []` was rejected by the shortcut, and a persona-only harness file was
+   * rejected by the mount, while `shortcut.ts`'s own comment called an empty tool set "a legitimate
+   * ablation" and the shortcut's error text advised "pass tools explicitly to ablate" — advice that
+   * failed when followed. "What does the model answer with no tools" is a real experiment, and it was
+   * not expressible.
+   *
+   * The discriminator has to be observable rather than declared: a harness whose rows are all denied by
+   * the profile is a configuration error, while one that declares no tool row is an endpoint. Both used
+   * to arrive as the same rejection.
+   */
+  it('accepts an empty tool list and compiles it to no tool row', () => {
+    const spec = normalizeShortcut({ tools: [] }, DEFAULTS, CATALOG)
+    expect(shortcutRows(spec)).toEqual([])
+  })
+
+  it('warns about a declared-empty surface and blocks a surface whose rows were denied', () => {
+    const declared = emptySurfaceVerdict({ rows: [], tools: [], skills: [] })
+    expect(declared.problem).toBeNull()
+    expect(declared.warning).toContain('legitimate')
+    // The other case: the operator asked for tools and the profile admitted none of them.
+    const denied = emptySurfaceVerdict({
+      rows: [
+        {
+          id: 'bench-harness:tool-bash',
+          module: '@deepseek-ai/dsh-tool-bash',
+          enabled: false,
+          fiberState: null,
+        },
+      ],
+      tools: [],
+      skills: [],
+    })
+    expect(denied.problem).toContain('does not admit any of them')
+    expect(denied.warning).toBeNull()
+    // And a surface with tools says nothing at all: this verdict is about the empty case only.
+    expect(emptySurfaceVerdict({ rows: [], tools: ['read'], skills: [] })).toEqual({
+      problem: null,
+      warning: null,
+    })
+  })
+})
+
+describe('B34 — a row that never started comes with its cause', () => {
+  /**
+   * Measured 2026-11-12: a harness file kept inside this repository mounted **nothing**, and the whole
+   * diagnosis for each row was `tool-fs (@deepseek-ai/dsh-tool-fs): never started` — the host's text for
+   * "no fiber was created", which names no cause. The cause was that bare module names resolve only from
+   * a profile tree or a linked package, and this repository's `node_modules` has no `dsh-tool-*`.
+   *
+   * The host cannot say that: it does not know where the file lives. The bench does, so it appends the
+   * one thing that turns the three words into a fix — and appends nothing to a diagnosis that already
+   * explains itself, because a paragraph under every failure is how a real cause stops being read.
+   */
+  it('adds a next step only for the symptom that has no cause of its own', () => {
+    const hint = mountFailureHint('tool-fs (@deepseek-ai/dsh-tool-fs): never started')
+    expect(hint).toContain('could not be resolved')
+    expect(hint).toContain('profile tree')
+    // A config complaint already names its cause; it must not grow a paragraph.
+    expect(mountFailureHint('$.sampleOverCapGlobResults missing required value')).toBe('')
+  })
+
+  it('appends it from the one place that raises the mount failure', () => {
+    const code = stripComments(sources().get('src/subject.ts') ?? '')
+    expect(code).toContain('mountFailureHint(health.broken)')
+  })
+})
+
+describe('B35 — the generation controls are part of the stimulus', () => {
+  /**
+   * Measured 2026-11-12: `harness_run` could set `provider`/`model` and nothing else, while the host's
+   * own `AgentOptions` carries `reasoningEffort` and `maxTokens` too, and the fold already recorded both
+   * off the request header. "Same model, lower effort" is a standard ablation and it could not be
+   * expressed; had it been expressed through the parent, two runs would have shared one fingerprint.
+   *
+   * The rule is B32's, applied to the two remaining request-level switches: anything that changes what
+   * the subject receives is in the identity, and is also a field a person can read.
+   */
+  it('changes the fingerprint when only an effort or a token ceiling changes', async () => {
+    const resolve = (extra: Record<string, unknown>) =>
+      resolveHarness(
+        { harness: { tools: ['fs'] }, provider: 'p', model: 'm', ...extra },
+        RESOLVE_DEPS,
+      )
+    const plain = await resolve({})
+    const effort = await resolve({ reasoningEffort: 'low' })
+    const tokens = await resolve({ maxTokens: 1024 })
+    expect(effort.fingerprint).not.toBe(plain.fingerprint)
+    expect(tokens.fingerprint).not.toBe(plain.fingerprint)
+    // Same route, different control: still two stimuli.
+    expect(effort.fingerprint).not.toBe(tokens.fingerprint)
+    // Two runs that differ only in the route still share a harness identity: that is what makes one file
+    // usable under several requests.
+    expect(effort.captured.digest).toBe(plain.captured.digest)
+  })
+
+  it('records all four controls, with `null` meaning inherited', async () => {
+    const inherited = stimulusRecord(
+      await resolveHarness({ harness: { tools: ['fs'] } }, RESOLVE_DEPS),
+      [],
+    )
+    expect(inherited.route).toEqual({
+      provider: null,
+      model: null,
+      reasoningEffort: null,
+      maxTokens: null,
+    })
+    // An effort on the parent's own route is NOT expressible, and the refusal is the honest half of the
+    // design: `applyConfiguredRoute` (dsh-agent-loop) returns early unless both provider and model are
+    // present, so an effort alone would be accepted here and dropped there. Measured 2026-11-12 — a
+    // trial that passed only an effort produced a request header still at the parent's effort.
+    await expect(
+      resolveHarness({ harness: { tools: ['fs'] }, reasoningEffort: 'high' }, RESOLVE_DEPS),
+    ).rejects.toThrow(/need a route/)
+    const full = stimulusRecord(
+      await resolveHarness(
+        {
+          harness: { tools: ['fs'] },
+          provider: 'p',
+          model: 'm',
+          reasoningEffort: 'high',
+          maxTokens: 512,
+        },
+        RESOLVE_DEPS,
+      ),
+      [],
+    )
+    expect(full.route).toEqual({
+      provider: 'p',
+      model: 'm',
+      reasoningEffort: 'high',
+      maxTokens: 512,
+    })
+  })
+
+  it('rejects a ceiling that would cut the subject off, and accepts the shape the host takes', async () => {
+    await expect(
+      resolveHarness(
+        { harness: { tools: ['fs'] }, provider: 'p', model: 'm', maxTokens: 0 },
+        RESOLVE_DEPS,
+      ),
+    ).rejects.toThrow(/positive integer/)
+    // The four fields reach the request through one translation, so the request and the record cannot
+    // name different routes.
+    const trial = stripComments(sources().get('src/trial.ts') ?? '')
+    expect(trial).toContain('optionsOf(plan.route)')
+    expect(trial).toMatch(/reasoningEffort: route\.reasoningEffort as ReasoningEffortId/)
   })
 })
 
