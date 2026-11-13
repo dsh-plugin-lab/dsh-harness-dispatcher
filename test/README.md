@@ -68,6 +68,7 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 | B33 | 零工具的受试体是可表达的（`tools: []` 合法，声明为空是消融是警告）；而「声明了行但一行都没被放行」仍是阻塞问题 |
 | B34 | `never started` 必须带下一步：挂载失败只有这三个字时，补一句「裸模块名在哪解析」；已经说清成因的诊断不加话 |
 | B35 | 生成控制属于刺激：`reasoning_effort` / `max_tokens` 进指纹、进记录、进 `agentOptions`，`null` 表示继承 |
+| B36 | `startActivation` 的实参是**平铺**的（宿主 0.2.2-rc.2 起 `request` 那一层没有了），也不许从 `request` 上读字段 |
 
 ## 已知盲区（**不是遗漏，是边界**）
 

@@ -156,24 +156,26 @@ export async function runTrial(
   const startedAt = Date.now()
 
   const options = optionsOf(plan.route)
+  // The task fields sit **at the top level**: since host 0.2.2-rc.2 `SubagentActivationSpec` extends
+  // `Omit<SubagentStartRequest, 'label' | 'signal'>` instead of nesting a `request`, and the
+  // implementation reads `spec.parent.id` on its first line — a nested spec therefore throws a bare
+  // `TypeError` on `undefined`, with no `SubagentError` to show for it (red line B36).
   const activation = await deps.subagents.startActivation({
     provider: 'spawn',
     label: `${plan.taskId} #${String(index)}`,
     delivery: 'caller',
     // Admission only — see the dispose listener below for the part that actually stops a child.
     signal: trialSignal,
-    request: {
-      prompt: [...plan.prompt],
-      parent,
-      agentPreset: plan.presetId,
-      maxDepth: plan.maxDepth,
-      ...(plan.cwd === null ? {} : { cwd: plan.cwd }),
-      // The host selects a route before it applies a generation control: `applyConfiguredRoute` returns
-      // early unless both provider and model are present, so `resolveRoute` refuses a control without a
-      // route rather than letting it be silently dropped here.
-      ...(options === undefined ? {} : { agentOptions: options }),
-      ...(plan.outputSchema === null ? {} : { outputSchema: plan.outputSchema }),
-    },
+    prompt: [...plan.prompt],
+    parent,
+    agentPreset: plan.presetId,
+    maxDepth: plan.maxDepth,
+    ...(plan.cwd === null ? {} : { cwd: plan.cwd }),
+    // The host selects a route before it applies a generation control: `applyConfiguredRoute` returns
+    // early unless both provider and model are present, so `resolveRoute` refuses a control without a
+    // route rather than letting it be silently dropped here.
+    ...(options === undefined ? {} : { agentOptions: options }),
+    ...(plan.outputSchema === null ? {} : { outputSchema: plan.outputSchema }),
   })
 
   const childId = String(activation.childId)

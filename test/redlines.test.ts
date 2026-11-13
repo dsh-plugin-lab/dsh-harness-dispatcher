@@ -2094,3 +2094,61 @@ describe('B32 — the stimulus identity covers every switch that changes what th
     )
   })
 })
+
+describe('B36 — the activation spec is flat, because the host moved the task fields up', () => {
+  /**
+   * The rule: the object handed to `startActivation` carries `prompt` / `parent` / `agentPreset` /
+   * `maxDepth` / `cwd` / `agentOptions` / `outputSchema` at its **top level**, and never under a
+   * `request` key.
+   *
+   * Measured on this machine 2026-11-13 against host `0.2.2-rc.2`: `harness_run` failed with a bare
+   * `Error: Cannot read properties of undefined (reading id)` — not a `SubagentError`, not a stop
+   * reason, just a `TypeError`, so the whole delegation path was unusable. The host flattened the spec
+   * (`SubagentActivationSpec extends Omit<SubagentStartRequest, 'label' | 'signal'>`) and its
+   * implementation reads `spec.parent.id` on the first line, so a nested `request` leaves `spec.parent`
+   * undefined.
+   *
+   * Why this is a source assertion rather than a type: the declaration cannot separate the two shapes.
+   * The floor was `^0.2.2-rc.1` when the defect shipped, and that range **includes** rc.2 — so a host
+   * that satisfied the declaration had changed the shape underneath it. That is how the defect survived
+   * a green `pnpm check`: the dev dependencies were still `0.2.2-rc.1`, whose `SubagentActivationSpec`
+   * still has `request`, so typecheck approved a call the running rc.2 host rejects. The installed dev
+   * line decides what typecheck sees, and the installed dev line was one edit behind the host.
+   *
+   * Reverse control, measured 2026-11-13: with the wrapper put back, this test reds — and so does
+   * `tsc`, but only **while the dev dependencies are rc.2** (`request` does not exist in
+   * `SubagentActivationSpec`). That is the state that let the defect through, one dependency edit away,
+   * which is why the judgement is pinned to the call's shape instead of to a typecheck that follows the
+   * installed dev line.
+   */
+  it('passes the task fields at the top level, with no `request` key', () => {
+    const code = stripComments(sources().get('src/trial.ts') ?? '')
+    const call = code.indexOf('startActivation({')
+    expect(call, 'src/trial.ts no longer calls startActivation({ … })').toBeGreaterThanOrEqual(0)
+    // Brace-balanced slice of the argument. `${…}` inside the label leaves the depth where it found it,
+    // so counting is enough and no parser has to be brought in for one assertion.
+    const open = code.indexOf('{', call)
+    let depth = 0
+    let end = -1
+    for (let at = open; at < code.length && end < 0; at += 1) {
+      if (code[at] === '{') depth += 1
+      else if (code[at] === '}') {
+        depth -= 1
+        if (depth === 0) end = at
+      }
+    }
+    const spec = end < 0 ? '' : code.slice(open, end + 1)
+    // Guard against a vacuous pass: an empty slice satisfies every `not` below.
+    for (const field of ['provider:', 'label:', 'delivery:', 'signal:', 'prompt:', 'parent,']) {
+      expect(spec, `the activation spec no longer carries \`${field}\``).toContain(field)
+    }
+    // The retired shape: one nested object holding the task. `request:` as a *key* of this literal.
+    expect(spec).not.toMatch(/[{,]\s*request\s*:/)
+  })
+
+  it('reads no field through the retired `request` object', () => {
+    const code = stripComments(sources().get('src/trial.ts') ?? '')
+    // The same shape on the reading side: `spec.request.prompt` and its neighbours.
+    expect(code).not.toMatch(/\.request\s*[.[]/)
+  })
+})
