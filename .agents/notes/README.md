@@ -1,6 +1,6 @@
 # .agents/notes/ — 目录结构与去哪查
 
-6 篇记录。这一层装「为什么这么定」，不装「现在是什么」
+7 篇记录。这一层装「为什么这么定」，不装「现在是什么」
 （那是 [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)），也不装「怎么干活」
 （那是 [AGENTS.md](../../AGENTS.md)）。写入约束见 [AGENTS.md](AGENTS.md)。
 
@@ -14,6 +14,7 @@
 | [Harness 的形状：判据从「声明」移到「观测」](2026-11-11-harness-shape.md) | 决策 | **核心判据**：harness 的文件形状、三层判据、真机纠正的两个缺陷 |
 | [`check` 全绿不代表 CI 会绿](2026-11-11-local-check-must-equal-ci.md) | 依据 | 为什么本地检查必须等于 CI 六步（红线 B9 的来源） |
 | [受试体里能放什么：一行能引用到什么](2026-11-11-what-a-row-can-reference.md) | 依据 | 行能引用宿主包 / 本仓 / 任意本地 `.js` / 非工具零件；封印让探针说谎的那个缺陷 |
+| [子 agent activation 的 spec 在 rc.2 平铺](2026-11-13-subagent-activation-spec-flat.md) | 依据 | `startActivation` 的实参形状、裸 `TypeError` 的出处、为什么版本面判不出来 |
 
 ## 按问题找
 
@@ -29,6 +30,7 @@
 | 一行能引用到什么（本仓自己的工具、任意 `.js`、非工具零件） | [一行能引用到什么](2026-11-11-what-a-row-can-reference.md#结论) |
 | 为什么封印之后探针报的工具比实际多 | [探针说谎的那个缺陷](2026-11-11-what-a-row-can-reference.md#缺陷封印会让探针说谎) |
 | 宿主 API 的签名与出处 | [扩展面核查](2026-11-10-host-api-surface-0.2.2-rc.1.md) |
+| 为什么 rc.1 记的 `startActivation` 形状在 rc.2 不对了、为什么 `check` 当时是绿的 | [spec 平铺](2026-11-13-subagent-activation-spec-flat.md) |
 | 为什么本机绿了推上去红 | [`check` 全绿不代表 CI 会绿](2026-11-11-local-check-must-equal-ci.md) |
 
 ## 命名约定

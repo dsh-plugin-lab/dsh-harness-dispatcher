@@ -36,7 +36,8 @@
 
 `ctx.subagents.startActivation(spec)`（`在跑:` `dsh-subagent` d.ts，两重重载与检出同形）。
 
-`spec.request` 里三个字段就是受试变量：
+这三个字段**就在 `spec` 顶层**，就是受试变量（宿主 0.2.2-rc.2 起 `SubagentActivationSpec` 把
+`SubagentStartRequest` 的字段平铺进来，`request` 那一层没有了 —— 红线 **B36**）：
 
 | 字段 | 作用 | 改的是 Harness 的哪一块 |
 |---|---|---|
@@ -62,7 +63,8 @@
    `~/.dsh/profiles/web/cordis.patch.yml` 的 `subagent` 行）。
    → 模型可见的 `subagent` 工具在本 profile **根本不能派活**。
    而 `startActivation` 是**服务直调**，`resolveMaxDepth` 只影响工具层；直调方自己给
-   `request.maxDepth`（`检出: subagent/README.md:49`：直接服务调用方继续提供自己的深度）。
+   `maxDepth`，也就是 `spec` 顶层那个（`检出: subagent/README.md:49`：直接服务调用方继续提供
+   自己的深度；rc.2 的 README 同一句仍在，只是不再叫 `request` 深度）。
    本插件因此显式传 `maxDepth`，并要求 ≥ 1，**不继承**那个 `0`。
    **这是刻意的**：调度器不能被「生产环境的保守设置」关掉；但也因此必须自己守住上界。
 

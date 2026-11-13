@@ -10,7 +10,10 @@
 
 **什么时候该重读 / 重做**：`dsh --version` 变了，或任何一条结论与实测不符。
 
-**已知的过期风险**：本档的出处行号只对 `0.2.2-rc.1` 成立。
+**已知的过期风险**：本档的出处行号只对 `0.2.2-rc.1` 成立。**rc.2 起 `startActivation` 的 spec 平铺**
+（`request` 那一层没有了，`prompt` / `parent` / `agentPreset` / `maxDepth` / `cwd` / `agentOptions` /
+`outputSchema` 都挂在顶层）—— 本档 §3.2 记的 `request: Omit<SubagentStartRequest, …>` 因此**已过期**，
+现行事实与实测见[spec 平铺](2026-11-13-subagent-activation-spec-flat.md)。
 
 ---
 # 宿主 API 面事实清单 —— 安装版 0.2.2-rc.1

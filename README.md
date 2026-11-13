@@ -117,7 +117,7 @@ The add step gives a **link**, so edits to the checkout take effect without rein
 
 | | |
 |---|---|
-| `engines.dsh` | `^0.2.2-rc.1` — verified against host `0.2.2-rc.1` |
+| `engines.dsh` | `^0.2.2-rc.2` — checked against host `0.2.2-rc.2`: the declaration installed here is byte-identical to the running host's, and the activation spec is the flat one |
 | Node | `>= 20` |
 
 The host's extension surface is read from the **running** version's `lib/**/*.d.ts`, never from a source
