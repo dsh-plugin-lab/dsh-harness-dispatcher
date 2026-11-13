@@ -104,14 +104,20 @@ the subject saw them: redact before sharing.
 
 ## Install
 
-Unreleased, so install from a checkout rather than from a registry:
+Install from the registry:
+
+```shell
+dsh plugin --profile <profile> add dsh-harness-dispatcher
+```
+
+Or from a source checkout, if you want to edit it in place:
 
 ```shell
 git clone https://github.com/dsh-plugin-lab/dsh-harness-dispatcher
 dsh plugin --profile <profile> add ./dsh-harness-dispatcher
 ```
 
-The add step gives a **link**, so edits to the checkout take effect without reinstalling.
+The checkout's add step gives a **link**, so edits to it take effect without reinstalling.
 
 ## Compatibility
 

@@ -4,9 +4,13 @@
 （现查 `package.json` 的 `engines.dsh`）、版本号（在 `package.json`）、日常维护规则（在
 [AGENTS.md](../AGENTS.md)）。
 
-**为什么这篇这么短**：本仓**从未发布过**。写一份照抄兄弟仓的手册，等于把**别人的**版本线、
-tag 形态、事故判例搬进来 —— 它们会漂，而且是**照着做才发现不对**的那种漂。
-所以这里只写「本仓已经具备什么」与「第一次发之前必须现查什么」。
+**当前状态**：**已发布到 npm**（首个版本已在 registry 上）。首次发布是**手动 `npm publish`** ——
+Trusted Publisher 无法完成首次发布，它要求包已经存在，必须先有包才有可绑定的对象。
+**Trusted Publisher 尚未配置**，所以后续发布在有它之前仍走手动。
+
+**为什么这篇这么短**：这里只写「本仓已经具备什么」与「发之前必须现查什么」。写一份照抄兄弟仓的
+手册，等于把**别人的**版本线、tag 形态、事故判例搬进来 —— 它们会漂，而且是**照着做才发现不对**
+的那种漂。
 
 ---
 
@@ -30,7 +34,7 @@ tag 形态、事故判例搬进来 —— 它们会漂，而且是**照着做才
 1. **`dsh --version`** —— 决定 `engines.dsh` 的范围要不要动。三处必须逐字相同：
    `engines.dsh` / `peerDependencies` / `devDependencies`。
 2. **`node scripts/check-release.mjs`** —— 现跑。它断言的是**当前**清单与 tarball，不是上一次的。
-3. **`pnpm run check`** —— 四项全绿。
+3. **`pnpm run check`** —— 六步全绿（typecheck / build / test / lint / format:check / check:release）。
 4. **npm 上是否已有这个包名** —— `npm view dsh-harness-dispatcher versions`。
    包名被占就要改名，**而改名会影响 `cordis.patch.yml` 的 `name` 与 profile 里已装的 link**。
 5. **Trusted Publisher 是否已配** —— OIDC 发布的前提，在 npmjs 网页上配，**不是文件里能声明的**。
@@ -38,9 +42,13 @@ tag 形态、事故判例搬进来 —— 它们会漂，而且是**照着做才
    草稿按 label 分类，缺它草稿的正文会是空的（而**不报错**）。发版前要么补，要么接受空正文。
 7. **`repository.url` 里的组织名** —— OIDC 要求它与跑 workflow 的组织一致。
 
-## 第一次发之后
+## 第一次发之后（已发生）
 
-`AGENTS.md` 的「发布前」节与本文都要同批改：把「从未发布」这句换成当前的版本线判例。
+首次发布走的是**手动 `npm publish`**：Trusted Publisher 要求包已经存在于 registry，所以 OIDC
+流水线**无法完成首次发布** —— 必须先手动发出一个版本，它才有可绑定的对象。
+**Trusted Publisher 尚未配置**（在 npmjs 网页上配，不是文件里能声明的），配置好之前后续发布仍走手动。
+
+按本文件自己的要求，`AGENTS.md` 的「发布前」节与本文已同批改掉了「从未发布」这句。
 **一条会漂的断言留在原地比没有更坏** —— 它读起来像事实。
 
 ---

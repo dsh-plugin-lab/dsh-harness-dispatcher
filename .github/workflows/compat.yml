@@ -1,0 +1,133 @@
+# Compatibility patrol: put the declared host ranges on another line and see whether the plugin still builds.
+#
+# Why weekly rather than per push: it reinstalls the whole dependency tree, which takes minutes, and
+# the host's version lines move at most a few times a week.
+#
+# Two jobs, two different questions, deliberately apart:
+#   declaration — reads only package.json and the registry, and judges whether the ranges we declare
+#                 still cover the line users install. No dependencies installed, seconds to answer.
+#   swap        — really changes the line, really installs, really runs the suite.
+#   Merged into one job they would mask each other: an out-of-date declaration and code that genuinely
+#   does not run are different problems with different fixes.
+#
+# Which line is mandatory: `next` is the commitment line — the RC line, where the host actually runs
+# and where engines.dsh and every peer floor sit. It goes red when it is red. The other two declared
+# families are recorded but not blocking: they are part of the promise and must be visible, but three
+# blocking legs would open three red jobs for one upstream move and dilute "red means broken".
+# Every family the declaration promises is exercised here; none is promised and left unverified.
+#
+# "Recorded" is not "unnoticed": any failure opens or updates one tracking issue with a fixed title
+# (scripts/report-compat-failure.mjs; a repeat of the same failure adds nothing). That is how
+# "non-blocking" and "visible" coexist — a scheduled run's failure mail goes only to whoever last
+# touched the cron entry, which cannot be the notification.
+#
+# Version numbers are not written here: they drift, and a redline would go red. Read them live with
+# `node scripts/compat-swap.mjs check`.
+name: compat
+
+on:
+  schedule:
+    # Mondays 02:00 UTC: far from the release flow, and the host's lines rarely move twice a week.
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Failure visibility means opening or updating the tracking issue.
+  issues: write
+
+jobs:
+  # The declaration: package.json and the registry only. Installs nothing, so it caches nothing.
+  declaration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      # The criterion: the declared ranges must cover the version each tracked line points at.
+      - name: Check that the declaration covers the tracked lines
+        id: declaration
+        run: node scripts/check-declaration.mjs
+
+      - name: Record the failure on the tracking issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/report-compat-failure.mjs \
+            --check declaration \
+            --step "Check that the declaration covers the tracked lines"
+
+  swap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The commitment line (the RC family): red means fix it.
+          # This leg has to be narrowed too: under a union range the installer prefers whatever
+          # `latest` points at when that satisfies the range, so a mixed tree gets installed and
+          # `verify` reports a false green that comes from the narrowing, not from the host.
+          #
+          # 2026-11-13: the declaration narrows to this family alone, so the two prefix legs below
+          # are gone with it. Adding a family back means adding a leg here in the same change.
+          - line: next
+            only: '--only 0.2.2'
+            blocking: true
+    name: swap (${{ matrix.line }})
+    steps:
+      - uses: actions/checkout@v7
+
+      # pnpm has to be installed before setup-node, or `cache: pnpm` cannot find the store.
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
+
+      # swap rewrites the declared ranges, installs **without** frozen, then runs verify.
+      # verify is not decoration: an install can fail while node_modules stays on the old versions,
+      # and the suite would then report the opposite of the truth.
+      - name: Swap onto the ${{ matrix.line }} line and confirm what got installed
+        id: swap
+        # A recorded line going red does not block the run, but it must still be visible: blocking
+        # and visible are different properties.
+        continue-on-error: ${{ !matrix.blocking }}
+        run: node scripts/compat-swap.mjs swap --line ${{ matrix.line }} ${{ matrix.only }}
+
+      - name: Typecheck
+        id: typecheck
+        continue-on-error: ${{ !matrix.blocking }}
+        run: pnpm run typecheck
+
+      - name: Test
+        id: test
+        continue-on-error: ${{ !matrix.blocking }}
+        run: pnpm test
+
+      # continue-on-error buys "does not block", not "does not show": which line failed and at which
+      # step goes into the tracking issue — but only for the commitment line, since a recorded line
+      # going red is information, not a call to action.
+      - name: Record the failure on the tracking issue
+        if: failure() && matrix.blocking
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SWAP_OUTCOME: ${{ steps.swap.outcome }}
+          TYPECHECK_OUTCOME: ${{ steps.typecheck.outcome }}
+          TEST_OUTCOME: ${{ steps.test.outcome }}
+        run: |
+          node scripts/report-compat-failure.mjs \
+            --check swap \
+            --line "${{ matrix.line }}" \
+            --step "swap=$SWAP_OUTCOME typecheck=$TYPECHECK_OUTCOME test=$TEST_OUTCOME"
