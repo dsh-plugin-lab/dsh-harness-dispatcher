@@ -109,7 +109,7 @@ add 给的是 **link**，所以改检出就直接生效，不用重装。
 
 | | |
 |---|---|
-| `engines.dsh` | `^0.2.2-rc.2` —— 对着宿主 `0.2.2-rc.2` 核过：本机装的那份声明与在跑宿主逐字节相同，activation spec 是平铺那版 |
+| `engines.dsh` | 见 [package.json](package.json) —— 本机装的那份声明与在跑宿主逐字节相同，activation spec 是平铺那版 |
 | Node | `>= 20` |
 
 宿主的扩展面以**在跑版本**的 `lib/**/*.d.ts` 为准，不看源码检出：两条线不一样，差一个 patch 就够让
