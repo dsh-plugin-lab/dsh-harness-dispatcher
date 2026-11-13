@@ -96,14 +96,20 @@
 
 ## 安装
 
-未发布，所以从检出装，而不是从 registry 装：
+从 registry 装：
+
+```shell
+dsh plugin --profile <profile> add dsh-harness-dispatcher
+```
+
+或者从源码检出装（想就地改它的时候）：
 
 ```shell
 git clone https://github.com/dsh-plugin-lab/dsh-harness-dispatcher
 dsh plugin --profile <profile> add ./dsh-harness-dispatcher
 ```
 
-add 给的是 **link**，所以改检出就直接生效，不用重装。
+从检出装时 add 给的是 **link**，所以改检出就直接生效，不用重装。
 
 ## 兼容性
 

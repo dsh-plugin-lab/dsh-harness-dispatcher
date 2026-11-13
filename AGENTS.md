@@ -5,8 +5,9 @@
 **为什么这个仓必须自带本文件**：宿主按目录链注入规则，`git init` 之后本目录就是 project root，
 链到本文件为止 —— 父目录的规则一个字都读不到。
 
-版本以 [package.json](package.json) 的 `version` 为准。**未发布到 npm**，但保持可发布形状
-（没有 `private: true` —— `check:release` 会拒绝它）。发布前置见 [docs/PUBLISHING.md](docs/PUBLISHING.md)。
+版本以 [package.json](package.json) 的 `version` 为准。**已发布到 npm**（首个版本已在 registry 上）；
+发布前置见 [docs/PUBLISHING.md](docs/PUBLISHING.md)。清单保持可发布形状（没有 `private: true` ——
+`check:release` 会拒绝它）。
 
 ## 这个仓做什么
 
@@ -275,5 +276,5 @@ skill 还在教人去找）、`output` 不截断这件事（改动说明不是�
 
 ## 发布前
 
-**未发布过。** 第一次发之前必须现查的事、以及与组织判据对齐的方法，都在
+**已发布到 npm。** 每次发之前必须现查的事、以及与组织判据对齐的方法，都在
 [docs/PUBLISHING.md](docs/PUBLISHING.md)。
