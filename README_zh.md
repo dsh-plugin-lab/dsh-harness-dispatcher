@@ -5,9 +5,9 @@
 <h1 align="center">dsh-harness-dispatcher</h1>
 
 <div align="center">
-  <p><em>装配是变量，记录是产物。</em></p>
+  <p><strong>让 agent 的装配看得见、留得下</strong></p>
 
-  <p>Model + Harness = Agent</p>
+  <p><em>Make your agent's assembly visible, and keep it</em></p>
 
   <p>
     <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat&logo=deepseek&logoColor=white" alt="powered by dsh"></a>
@@ -15,7 +15,12 @@
 
   <p>
     <a href="https://github.com/dsh-plugin-lab/dsh-harness-dispatcher/actions/workflows/ci.yml"><img src="https://github.com/dsh-plugin-lab/dsh-harness-dispatcher/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat" alt="MIT license"></a>
+    <a href="https://www.npmjs.com/package/dsh-harness-dispatcher"><img src="https://img.shields.io/npm/v/dsh-harness-dispatcher.svg?style=flat" alt="npm"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat" alt="MIT 许可证"></a>
+  </p>
+
+  <p>
+    各版本改动 → <a href="https://github.com/dsh-plugin-lab/dsh-harness-dispatcher/releases">Releases</a>（与 npm 版本一一对应）
   </p>
 
   <p>

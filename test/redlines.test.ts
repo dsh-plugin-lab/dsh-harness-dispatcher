@@ -2152,3 +2152,63 @@ describe('B36 — the activation spec is flat, because the host moved the task f
     expect(code).not.toMatch(/\.request\s*[.[]/)
   })
 })
+
+describe('B37 — the front door says what this plugin is for, in both languages', () => {
+  /**
+   * The rule: the tagline block is **two lines** — `<strong>` in the language of the file you are
+   * reading, `<em>` in the other one — and the two READMEs are each other's mirror.
+   *
+   * Why this is an assertion rather than habit. Five sibling repositories in this family all follow
+   * the shape (measured 2026-11-13: five repositories, ten files, no exception) and this one did not:
+   * it carried a two-clause motto in italics with **no bold line at all**, plus a formula describing
+   * how the host decomposes an agent. A proverb about the design reads as a claim about how the thing
+   * was built; a front door has to say what the plugin is *for*. Both halves of that failure are
+   * invisible — nothing renders wrong, and a reader of one language never sees the other file, so
+   * nothing anywhere reports that the pair drifted apart.
+   */
+  const CJK = /[\u4e00-\u9fff]/u
+
+  /**
+   * The tagline pair of one README.
+   * @param file - README file name at the repository root.
+   * @returns the bold and italic tagline texts.
+   */
+  function tagline(file: string): { strong: string; em: string } {
+    const text = readFileSync(join(ROOT, file), 'utf8')
+    // Only the front matter, which is everything above the first horizontal rule. The language
+    // switcher cannot be confused with these two patterns: its `</strong>` is followed by more text
+    // on the same line (`· <a …>`), so `<p><strong>…</strong></p>` does not match it.
+    const header = text.slice(0, text.indexOf('\n---\n'))
+    const strong = /<p><strong>(.+?)<\/strong><\/p>/u.exec(header)?.[1] ?? ''
+    const em = /<p><em>(.+?)<\/em><\/p>/u.exec(header)?.[1] ?? ''
+    // Guard against the vacuous pass: two missing lines are also "each other's mirror" once empty.
+    expect(strong, `${file} has no bold tagline line`).not.toBe('')
+    expect(em, `${file} has no italic tagline line`).not.toBe('')
+    return { strong, em }
+  }
+
+  it('puts the language of this file in bold and the other one in italics', () => {
+    const english = tagline('README.md')
+    const chinese = tagline('README_zh.md')
+    // The bold line is what a reader of this file understands without switching.
+    expect(
+      CJK.test(english.strong),
+      'README.md is English, so its bold line must not be Chinese',
+    ).toBe(false)
+    expect(CJK.test(english.em), 'README.md names the other language in italics').toBe(true)
+    expect(
+      CJK.test(chinese.strong),
+      'README_zh.md is Chinese, so its bold line must be Chinese',
+    ).toBe(true)
+    expect(CJK.test(chinese.em), 'README_zh.md names the other language in italics').toBe(false)
+  })
+
+  it('states the same sentence on both sides, swapped rather than retranslated', () => {
+    const english = tagline('README.md')
+    const chinese = tagline('README_zh.md')
+    // Two front doors stating different things are two documents, and whichever one a search engine
+    // happens to index is the only one anyone reads.
+    expect(english.strong).toBe(chinese.em)
+    expect(english.em).toBe(chinese.strong)
+  })
+})

@@ -5,9 +5,9 @@
 <h1 align="center">dsh-harness-dispatcher</h1>
 
 <div align="center">
-  <p><em>The assembly is the variable. The record is the deliverable.</em></p>
+  <p><strong>Make your agent's assembly visible, and keep it</strong></p>
 
-  <p>Model + Harness = Agent</p>
+  <p><em>让 agent 的装配看得见、留得下</em></p>
 
   <p>
     <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat&logo=deepseek&logoColor=white" alt="powered by dsh"></a>
@@ -15,7 +15,12 @@
 
   <p>
     <a href="https://github.com/dsh-plugin-lab/dsh-harness-dispatcher/actions/workflows/ci.yml"><img src="https://github.com/dsh-plugin-lab/dsh-harness-dispatcher/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <a href="https://www.npmjs.com/package/dsh-harness-dispatcher"><img src="https://img.shields.io/npm/v/dsh-harness-dispatcher.svg?style=flat" alt="npm"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat" alt="MIT license"></a>
+  </p>
+
+  <p>
+    Per-version changes → <a href="https://github.com/dsh-plugin-lab/dsh-harness-dispatcher/releases">Releases</a>
   </p>
 
   <p>
