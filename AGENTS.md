@@ -71,6 +71,11 @@ pnpm run check     # typecheck + build + test + lint + format:check + check:rele
 - **手改过源码就跑** `lint` / `format:check`。**改文件只用编辑工具**：PowerShell 的
   `Get-Content`/`Set-Content` 往返会改坏字符（实测把 `harnessDir` 毁成 `harnessiir`）。
 - `check:release` 断言发布态不变量（[scripts/check-release.mjs](scripts/check-release.mjs)）。
+- **宿主兼容巡检不在这里，但它有执行体**：`.github/workflows/compat.yml` 每周把声明面换到 `next`
+  线上真装真跑。两个脚本能在本机直接跑 ——
+  `node scripts/check-declaration.mjs`（只读 `package.json` 与 registry，几十秒）与
+  `node scripts/compat-swap.mjs selftest`（离线形状表，`test/compat-swap.test.ts` 已把它钉进 `pnpm run check`）。
+  **`node scripts/compat-swap.mjs swap` 会删 `pnpm-lock.yaml` 与 `node_modules` 再重装**，别顺手跑。
 
 **`pnpm run check` 不覆盖加载期**（`apply()` 里每一行），而加载期是「插件根本起不来」的唯一入口 ——
 栽过：`'fs' in TOOL_KEYS`（`Set` 用 `in`，恒 false）拒绝激活而 check 全绿。

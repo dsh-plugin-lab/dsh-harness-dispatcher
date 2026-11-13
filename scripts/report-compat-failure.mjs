@@ -106,7 +106,7 @@ export function issueBody(input) {
     recovery,
     '',
     `Dispatch after pushing: \`gh workflow run compat.yml\`. The criteria above are quoted from ` +
-      '[docs/PUBLISHING.md](https://github.com/dsh-plugin-lab/dsh-dsml-rescue/blob/main/docs/PUBLISHING.md), ' +
+      '[docs/PUBLISHING.md](https://github.com/dsh-plugin-lab/dsh-harness-dispatcher/blob/main/docs/PUBLISHING.md), ' +
       'which is where they are maintained.',
     '',
     'This issue is updated in place: a repeat of the same failure adds no comment.',

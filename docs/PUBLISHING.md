@@ -34,7 +34,7 @@ Trusted Publisher 无法完成首次发布，它要求包已经存在，必须�
 1. **`dsh --version`** —— 决定 `engines.dsh` 的范围要不要动。三处必须逐字相同：
    `engines.dsh` / `peerDependencies` / `devDependencies`。
 2. **`node scripts/check-release.mjs`** —— 现跑。它断言的是**当前**清单与 tarball，不是上一次的。
-3. **`pnpm run check`** —— 四项全绿。
+3. **`pnpm run check`** —— 六步全绿（typecheck / build / test / lint / format:check / check:release）。
 4. **npm 上是否已有这个包名** —— `npm view dsh-harness-dispatcher versions`。
    包名被占就要改名，**而改名会影响 `cordis.patch.yml` 的 `name` 与 profile 里已装的 link**。
 5. **Trusted Publisher 是否已配** —— OIDC 发布的前提，在 npmjs 网页上配，**不是文件里能声明的**。

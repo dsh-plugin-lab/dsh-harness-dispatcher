@@ -26,6 +26,7 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 | [record.test.ts](record.test.ts) | run 目录形状、`wx` 独占、`discard` | [src/record.ts](../src/record.ts) |
 | [catalog.test.ts](catalog.test.ts) | 目录键、默认集、描述生成 | [src/catalog.ts](../src/catalog.ts) |
 | [smoke.test.ts](smoke.test.ts) | 模块能 import、注册面存在 | [src/index.ts](../src/index.ts) |
+| [compat-swap.test.ts](compat-swap.test.ts) | 宿主巡检的换版保形：跑 `scripts/compat-swap.mjs selftest` 那张形状表 | [scripts/compat-swap.mjs](../scripts/compat-swap.mjs) |
 
 `text.ts` 的三个导出（`contentBlocksOf` / `errorMessage` / `firstLine`）由各自调用方的测试覆盖
 （`fold`、`attachments`、`jobs`、`record`），并有一条红线（**B31**）保证它们没有被抄第二份。
