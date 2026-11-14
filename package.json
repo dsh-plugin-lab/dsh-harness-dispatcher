@@ -16,7 +16,10 @@
     "dsh-plugin",
     "benchmark",
     "evaluation",
-    "harness"
+    "harness",
+    "ablation",
+    "trace",
+    "experiment"
   ],
   "license": "MIT",
   "author": "zlZayn",
