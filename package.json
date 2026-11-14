@@ -1,6 +1,6 @@
 {
   "name": "dsh-harness-dispatcher",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Benchmark a DSH agent harness, not a model: run one fixed task against controlled pipeline variants (tools, persona, injected tool faults, model route) and record deterministic per-trial traces as JSONL.",
   "repository": {
     "type": "git",
