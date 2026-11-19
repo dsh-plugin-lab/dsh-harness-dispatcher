@@ -10,7 +10,7 @@
  */
 
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -1000,7 +1000,14 @@ describe('B24 — a registered skill is loadable, not merely listed', () => {
       logger: { info: () => undefined, warn: () => undefined },
     }
     const body = '# not empty\n\nThe body a model reads.'
-    const ok = registerSkill(ctx as never, { name: SKILL_NAME, description: 'd', body })
+    const file = join(ROOT, 'skills', SKILL_NAME, 'SKILL.md')
+    const ok = registerSkill(ctx as never, {
+      name: SKILL_NAME,
+      description: 'd',
+      body,
+      path: file,
+      directory: dirname(file),
+    })
 
     expect(ok).toBe(true)
     expect(registered).toHaveLength(1)
@@ -1011,6 +1018,20 @@ describe('B24 — a registered skill is loadable, not merely listed', () => {
     expect(entry.source).not.toBe('')
     expect(entry.content).toBe(body)
     expect(entry.name).toBe(SKILL_NAME)
+    // The file identity the host never validates: without `path` the right sidebar cannot open the skill
+    // (the client reads it off the catalogue entry and silently gives up), and without `resourceBase` the
+    // model is told the provider manages the resources, so a relative path cannot be resolved.
+    expect(entry.path).toBe(file)
+    expect(entry.resourceBase).toEqual({ kind: 'directory', path: dirname(file) })
+  })
+
+  it('reads the identity from the file it actually loaded, not from the default location', () => {
+    // A fixture stands in for the shipped file, so the identity must follow the path argument: carrying
+    // the constant instead would point a fixture run at a file that run never read.
+    const loaded = readSkill()
+    expect(loaded.path).toBe(join(ROOT, 'skills', SKILL_NAME, 'SKILL.md'))
+    expect(loaded.directory).toBe(dirname(loaded.path))
+    expect(loaded.directory).toBe(join(ROOT, 'skills', SKILL_NAME))
   })
 })
 

@@ -68,7 +68,7 @@
 | 文件 | 导出 | 说明 |
 |---|---|---|
 | [index.ts](index.ts) | `name` / `inject` / `apply` | 唯一装配点：三个工具 + skill + 提示段 |
-| [skill.ts](skill.ts) | `SKILL_NAME` / `readSkill` / `splitFrontmatter` / `registerSkill` | 代码注册的 skill；正文 + 元信息是 [../skills/dsh-harness-dispatcher/SKILL.md](../skills/dsh-harness-dispatcher/SKILL.md)，`skills` 服务**可选**，注册挂 `ctx.effect`（**B18**），注册对象带 `source`（**B24**） |
+| [skill.ts](skill.ts) | `SKILL_NAME` / `readSkill` / `splitFrontmatter` / `registerSkill` | 代码注册的 skill；正文 + 元信息是 [../skills/dsh-harness-dispatcher/SKILL.md](../skills/dsh-harness-dispatcher/SKILL.md)，`skills` 服务**可选**，注册挂 `ctx.effect`（**B18**），注册对象带 `source` 与文件身份 `path` / `resourceBase`（**B24**） |
 
 `skill.ts` 用代码注册而不是文件目录：文件式 skill 在没把 `customSkillDirs` 指过去的 preset 里
 **不可见且不报错**，是个死指针。但**正文是文件**，而且是一个**合法的 skill 文件**（带 YAML

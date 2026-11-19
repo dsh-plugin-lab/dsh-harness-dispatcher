@@ -21,7 +21,7 @@
  */
 
 import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -81,6 +81,18 @@ export interface SkillRegistration {
   readonly description: string
   readonly source: string
   readonly content: string
+  /**
+   * The file this body came from.
+   *
+   * A runtime registration carries no file identity of its own (the host calls such a skill
+   * *virtual*), and the host validates it at neither boundary. Without `path` the right sidebar
+   * cannot open the skill at all — the client reads it off the catalogue entry and silently gives
+   * up — and without `resourceBase` the model is told the provider manages the resources, so a
+   * relative path in the body cannot be resolved.
+   */
+  readonly path: string
+  /** The directory a loaded body resolves relative paths against. */
+  readonly resourceBase: { readonly kind: 'directory'; readonly path: string }
 }
 
 /** Where a runtime registration came from. The registry calls this provider `runtime` too. */
@@ -92,6 +104,10 @@ export interface LoadedSkill {
   readonly description: string
   /** The Markdown after the frontmatter. */
   readonly body: string
+  /** The file the body was read from, carried into the registration as `path`. */
+  readonly path: string
+  /** `path`'s directory, carried into the registration as `resourceBase`. */
+  readonly directory: string
 }
 
 /** Strip a matching pair of quotes, as YAML convention requires when a value contains `: `. */
@@ -146,13 +162,14 @@ export function splitFrontmatter(
  * only when a model loads the skill and gets an empty block, by which point nothing says which step broke.
  *
  * @param path - the file to read; overridable so tests can point at a fixture.
- * @returns name, description and body.
+ * @returns name, description, body, and the absolute file it came from.
  * @throws {Error} when the file is unreadable, malformed, or empty.
  */
 export function readSkill(path: string = SKILL_PATH): LoadedSkill {
+  const file = resolve(path)
   let raw: string
   try {
-    raw = readFileSync(path, 'utf8')
+    raw = readFileSync(file, 'utf8')
   } catch (error) {
     throw new Error(
       `the usage skill could not be read at ${path}: ${error instanceof Error ? error.message : String(error)}. ` +
@@ -189,7 +206,7 @@ export function readSkill(path: string = SKILL_PATH): LoadedSkill {
       `${path} has frontmatter but no body, which would render an empty <skill_content>.`,
     )
   }
-  return { name, description, body: parsed.body }
+  return { name, description, body: parsed.body, path: file, directory: dirname(file) }
 }
 
 /**
@@ -233,6 +250,8 @@ export function registerSkill(ctx: Context, skill?: LoadedSkill): boolean {
           description: loaded.description,
           source: SOURCE,
           content: loaded.body,
+          path: loaded.path,
+          resourceBase: { kind: 'directory', path: loaded.directory },
         }),
       'harness.skill',
     )
