@@ -537,7 +537,7 @@ harness 文件所在目录，而 run 目录不在任何解析基准上，挂副�
 | `harness_run` | 工具：任务 + 受试 harness + trial 数 → 结构化句柄 | **已实现** |
 | `harness_inspect` | 挂载 + 审计 + 探针（`acquireScope`），**零模型成本**；四个入口按成本排序：无参（列 preset + provider）、`{provider}`（列该路由的模型）、`preset`、`harness`；判定分两级：`problems`（跑不成/不是要做的实验）与 `warnings`（挂载了但不出力） | **已实现** |
 | `harness_export` | `readDocument()` → 一份能跑的 harness 文件 | **已实现** |
-| 使用说明 skill | [src/skill.ts](../src/skill.ts)，代码注册、`skills` 服务可选 | **已实现**（注册对象要带 `source`，否则只列得出、加载不了，红线 **B24**） |
+| 使用说明 skill | [src/skill.ts](../src/skill.ts)，代码注册、`skills` 服务可选 | **已实现**（注册对象要带 `source`，否则只列得出、加载不了；还要带 `path` / `resourceBase`，否则右栏点不开、相对路径无处可解 —— 红线 **B24**） |
 | 造工具 / 改工具 | preset 行 [src/tool.ts](../src/tool.ts)：一份文件定义或覆盖一个工具 | **已实现** |
 | 封闭宿主工具与技能通道 | preset 行 [src/sealed.ts](../src/sealed.ts)，见「增量与封闭」 | **已实现**（技能只能靠不给通道） |
 | `session/event` 折叠 | [src/fold.ts](../src/fold.ts)：受试体做了什么 + 被给了什么 | **已实现** |
