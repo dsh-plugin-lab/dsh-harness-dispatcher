@@ -1921,20 +1921,20 @@ describe('B33 — the zero-tool subject is reachable, and a denied one is not si
    * failed when followed. "What does the model answer with no tools" is a real experiment, and it was
    * not expressible.
    *
-   * The discriminator has to be observable rather than declared: a harness whose rows are all denied by
-   * the profile is a configuration error, while one that declares no tool row is an endpoint. Both used
-   * to arrive as the same rejection.
+   * The discriminator has to be observable rather than declared: a harness whose rows mount disabled is
+   * a configuration error, while one that declares no tool row is an endpoint. Both used to arrive as the
+   * same rejection.
    */
   it('accepts an empty tool list and compiles it to no tool row', () => {
     const spec = normalizeShortcut({ tools: [] }, DEFAULTS, CATALOG)
     expect(shortcutRows(spec)).toEqual([])
   })
 
-  it('warns about a declared-empty surface and blocks a surface whose rows were denied', () => {
+  it('warns about a declared-empty surface and blocks a surface whose rows mounted disabled', () => {
     const declared = emptySurfaceVerdict({ rows: [], tools: [], skills: [] })
     expect(declared.problem).toBeNull()
     expect(declared.warning).toContain('legitimate')
-    // The other case: the operator asked for tools and the profile admitted none of them.
+    // The other case: the operator asked for tools and none of the declared rows produced one.
     const denied = emptySurfaceVerdict({
       rows: [
         {
@@ -1947,7 +1947,7 @@ describe('B33 — the zero-tool subject is reachable, and a denied one is not si
       tools: [],
       skills: [],
     })
-    expect(denied.problem).toContain('does not admit any of them')
+    expect(denied.problem).toContain('none of them produced a tool')
     expect(denied.warning).toBeNull()
     // And a surface with tools says nothing at all: this verdict is about the empty case only.
     expect(emptySurfaceVerdict({ rows: [], tools: ['read'], skills: [] })).toEqual({
@@ -2231,5 +2231,60 @@ describe('B37 — the front door says what this plugin is for, in both languages
     // happens to index is the only one anyone reads.
     expect(english.strong).toBe(chinese.em)
     expect(english.em).toBe(chinese.strong)
+  })
+})
+
+describe('B38 — a disabled row is reported without a cause the code cannot know', () => {
+  /**
+   * Measured 2026-11-20 on `0.2.2-rc.3`: both messages blamed "the profile's compatibility policy" for
+   * every disabled row. A control proved the cause was invented — the same module, mounted without
+   * `disabled: true`, was admitted and callable, so the profile had admitted it all along.
+   *
+   * The cause is not knowable here. `AgentPresetCompositionRow.enabled` merges at least four sources
+   * into one boolean — the row's own `disabled`, an ancestor group, a `!!js` condition that evaluated
+   * false, and the loader's admission policy — and this repository never parses a harness file, so it
+   * cannot ask which one fired. Naming one is a guess that sends the reader to the wrong file.
+   *
+   * What survives is the observation: the row contributes nothing. Both messages keep saying that.
+   *
+   * Reverse control: put any single cause back into either message and this reds.
+   */
+  it('names no cause in the warning for a row that mounted disabled', () => {
+    const warnings = rowWarnings({
+      rows: [
+        {
+          id: 'bench-harness:tool-bash',
+          module: '@deepseek-ai/dsh-tool-bash',
+          enabled: false,
+          fiberState: null,
+        },
+      ],
+      tools: ['read'],
+      skills: [],
+    })
+    expect(warnings).toHaveLength(1)
+    // The row is still identified: a warning that cannot be traced is useless.
+    expect(warnings[0]).toContain('tool-bash')
+    expect(warnings[0]).toContain('contributes nothing')
+    expect(warnings[0]).not.toMatch(/policy|denied|refus/i)
+  })
+
+  it('names no cause in the blocking verdict either', () => {
+    const denied = emptySurfaceVerdict({
+      rows: [
+        {
+          id: 'bench-harness:tool-bash',
+          module: '@deepseek-ai/dsh-tool-bash',
+          enabled: false,
+          fiberState: null,
+        },
+      ],
+      tools: [],
+      skills: [],
+    })
+    expect(denied.problem).toContain('no tool callable')
+    expect(denied.problem).not.toMatch(/policy|denied|refus/i)
+    // The discriminator B33 owns still holds: declaring nothing is not the same rejection.
+    expect(emptySurfaceVerdict({ rows: [], tools: [], skills: [] }).problem).toBeNull()
   })
 })

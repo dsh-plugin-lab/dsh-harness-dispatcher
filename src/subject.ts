@@ -10,9 +10,9 @@
  *   2. **Activation.** `register()` resolves even when the mount failed — the diagnostic stays in its
  *      record. Without reading `resolve(id).broken` back, a broken harness yields a run directory and an
  *      empty `trials.jsonl` instead of an error.
- *   3. **Enablement.** A row the profile's policy denies mounts *disabled*, and the audit skips disabled
- *      rows, so gate 2 can pass while the row contributes nothing. `compositionInventory()` is the only
- *      place that is visible.
+ *   3. **Enablement.** A row can mount *disabled* — its own `disabled`, an ancestor group, or loader
+ *      policy — and the audit skips disabled rows, so gate 2 can pass while the row contributes
+ *      nothing. `compositionInventory()` is the only place that is visible.
  *
  * Probing goes through a scope lease, not the row list: the audit says "did every row start", while the
  * experiment asks *what can the subject call?* `acquireScope(id)` answers that without starting an agent,
@@ -31,7 +31,7 @@ export interface RowFact {
   readonly id: string | null
   /** Module specifier the row named. */
   readonly module: string
-  /** Enablement after the profile's compatibility policy. */
+  /** Effective enablement: the row's own `disabled`, an ancestor group, or loader policy. */
   readonly enabled: boolean | 'conditional'
   /** Root fiber state, when the row has a live fiber. */
   readonly fiberState: FiberState | null
@@ -255,8 +255,8 @@ export function emptySurfaceVerdict(surface: CapabilitySurface): {
   if (surface.rows.some((row) => row.enabled === false)) {
     return {
       problem:
-        'this harness mounted but makes no tool callable: it declares tool rows and the profile does ' +
-        'not admit any of them, so the subject would be recorded as unable to act',
+        'this harness mounted but makes no tool callable: it declares rows and none of them produced a ' +
+        'tool, so the subject would be recorded as unable to act',
       warning: null,
     }
   }
@@ -393,10 +393,7 @@ export function rowWarnings(surface: CapabilitySurface): string[] {
   for (const row of surface.rows) {
     const label = `${row.id ?? '(no id)'} (${row.module})`
     if (row.enabled === false) {
-      warnings.push(
-        `${label}: mounted disabled — the profile's compatibility policy does not admit it, ` +
-          'so it contributes nothing to the subject',
-      )
+      warnings.push(`${label}: mounted disabled — it contributes nothing to the subject`)
     } else if (row.enabled === 'conditional') {
       warnings.push(`${label}: enablement could not be evaluated outside a mount`)
     }

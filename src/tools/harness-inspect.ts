@@ -3,7 +3,7 @@
  *
  * Mounting costs no model call, so this is the one-second, zero-token loop. It answers the three things
  * a static check cannot: will it mount (the registry's own diagnosis, which `register()` swallows);
- * will every row contribute (a policy-denied row mounts disabled and the audit skips it); and what can
+ * will every row contribute (rows can mount disabled, and the audit skips them); and what can
  * the subject actually call (the observed names, which a fault must be checked against).
  *
  * Four ways to ask, and they are ordered by what they cost:
