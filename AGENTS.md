@@ -258,7 +258,7 @@ skill 还在教人去找）、`output` 不截断这件事（改动说明不是�
 | 把宿主包的 config 当成一次写好的常量 | 宿主把某个字段改成必填，`catalog.ts` 里那份副本就过期，于是**默认工具集整份挂不上**（2026-11-12 实测：`fs-search` 的 `sampleOverCapGlobResults`，`DEFAULT_TOOLS` 与 `{ persona }` 两个入口同时死） | 升级 `engines.dsh` 时逐个核在跑版 `.d.ts`；红线只钉「名字对得上」，钉不住 schema，所以这条靠人 |
 | `catalog.ts` 的 `todo` 条目**没给 config**，而 `@deepseek-ai/dsh-tool-todo` 的 `allowParallelInProgress` 是**必填**（`lib/types/index.js`：`z.boolean().required()`），**发现于 2026-11-13 本轮，未修** | 带 `todo` 键的 harness **挂不上**：`$.allowParallelInProgress missing required value`。与 rc.2 无关，两个 tag 同形 | 现在只能不用 `todo` 键；要修就在 `catalog.ts` 给它补 `config`（`true` / `false` 是**两套不同纪律**：并发写多行 vs 单行，选哪个会改变受试体行为，得先定） |
 | `trial_concurrency` 超过宿主空闲容量 | 宿主**拒绝不排队**（`ACTIVATION_LIMIT_REACHED`）：该 trial 报错，run 等其余 worker 落地后报错，已记录的保留 | 并发 ≤ `maxActiveSubagents`（默认 8，整棵树共享）减去树里其他活子代理；错误消息自带现值 |
-| 刚发布的版本 `npm view` 查 404 | registry 副本/CDN 有分钟级延迟（0.2.0 实测：publish 成功 2 分钟后直连查仍 404），误判成「没发出去」会去重发 | 以流水线 publish 步骤日志（`✅ Published`）为准，等几分钟再查；npm 版本不可覆盖，重发同版本必报错 |
+| 刚发布的版本 `npm view` 查 404 | registry 副本/CDN 有分钟级延迟（实测 publish 成功两分钟后直连查仍 404），误判成「没发出去」会去重发 | 以流水线 publish 步骤日志（`✅ Published`）为准，等几分钟再查；npm 版本不可覆盖，重发同版本必报错 |
 
 ## 改动影响路由
 

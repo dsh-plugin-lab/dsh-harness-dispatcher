@@ -4,9 +4,9 @@
 （现查 `package.json` 的 `engines.dsh`）、版本号（在 `package.json`）、日常维护规则（在
 [AGENTS.md](../AGENTS.md)）。
 
-**当前状态**：**已发布到 npm**，**Trusted Publisher 已配置**（environment `release`）：0.2.0 起由
-tag 触发的共享 OIDC 流水线发布（2026-11-21 实测全绿）。首次发布是**手动 `npm publish`** ——
-Trusted Publisher 要求包已经存在，必须先有包才有可绑定的对象。
+**当前状态**：**已发布到 npm**，**Trusted Publisher 已配置**（environment `release`），发布走
+tag 触发的共享 OIDC 流水线。首次发布是**手动 `npm publish`** —— Trusted Publisher 要求包已经
+存在，必须先有包才有可绑定的对象。
 
 **为什么这篇这么短**：这里只写「本仓已经具备什么」与「发之前必须现查什么」。写一份照抄兄弟仓的
 手册，等于把**别人的**版本线、tag 形态、事故判例搬进来 —— 它们会漂，而且是**照着做才发现不对**
@@ -46,10 +46,9 @@ Trusted Publisher 要求包已经存在，必须先有包才有可绑定的对�
 
 首次发布走的是**手动 `npm publish`**：Trusted Publisher 要求包已经存在于 registry，所以 OIDC
 流水线**无法完成首次发布** —— 必须先手动发出一个版本，它才有可绑定的对象。
-**Trusted Publisher 现已配置**（npmjs 网页，environment `release`）：0.2.0（2026-11-21）由
-tag 触发的共享流水线经 OIDC 发出，publish / tag / Release / 弃草稿全绿。
+**Trusted Publisher 现已配置**（npmjs 网页，environment `release`），后续发布走共享 OIDC 流水线。
 
-**一条会漂的断言留在原地比没有更坏** —— 它读起来像事实。本节与「当前状态」已随 0.2.0 实测更新。
+**一条会漂的断言留在原地比没有更坏** —— 它读起来像事实。版本与日期在 git 历史和 Release 里，不进本文。
 
 ---
 
