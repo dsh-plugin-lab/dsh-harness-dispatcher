@@ -48,14 +48,14 @@
 
 | 文件 | 导出 | 谁依赖 | 改后必跑 |
 |---|---|---|---|
-| [run.ts](run.ts) | `runBench` / `summaryLine` / `RunRequest` / `RunSummary` | `tools/harness-run`（两条等待都调它） | **B6 / B8 / B10 / B15**（执行体搬家后仍在这里）+ **B26**（唯一执行体）+ **B28**（一次停止停一切；`stopped` 只在后台读得到）+ **B31**（逐 trial 的结果只有 `TrialOutcome` 一个类型，见 `trial.ts`） |
+| [run.ts](run.ts) | `runBench` / `summaryLine` / `RunRequest` / `RunSummary` | `tools/harness-run`（两条等待都调它） | **B6 / B8 / B10 / B15**（执行体搬家后仍在这里）+ **B26**（唯一执行体）+ **B28**（一次停止停一切；`stopped` 只在后台读得到）+ **B31**（逐 trial 的结果只有 `TrialOutcome` 一个类型，见 `trial.ts`）+ **B39**（并发是有界池，先落地再报错） |
 | [trial.ts](trial.ts) | `runTrial` / `stoppedByBudget` / `TrialPlan` / `TrialOutcome` | `run` | **B23 / B28**（融合信号里始终有调用方的信号）+ **B31**（`TrialOutcome` 是逐 trial 结果的唯一类型；`trial` 字段名与记录、工具输出同一串）+ `fold` 单测 |
 | [abort.ts](abort.ts) | `onceAborted` | `trial` | `abort` 单测 |
 | [jobs.ts](jobs.ts) | `jobOutcomeOf` + `JobRegistry` 等结构类型 | `tools/harness-run` | **B26 / B28**（`killed` / `failed` 分清；没抛的喊停也是 `killed`；`detail` 只放一行） |
 | [collector.ts](collector.ts) | `FoldCollector` | `run` | `collector` 单测（`arm()` 的 `recordEvents` 是**必填**：默认值只有工具那侧一个 home，见 **B31**） |
 | [fold.ts](fold.ts) | `foldEvent` / `finishFold` / `summarize` / `TrialObservations` | `collector`、`record` | **B4 / B7 / B30** + `fold` 单测 |
 | [host.ts](host.ts) | `HOST_KEYS` / `readHost` / `HostRead` / `HostSnapshot` | `tools/harness-run`、`trial`、`record` | **B30** + `host` 单测 |
-| [record.ts](record.ts) | `openRun` / `stimulusRecord` / `TrialRecord` / `EVENTS_FILE` | 三个工具 | **B5 / B6 / B30** + `record` 单测 |
+| [record.ts](record.ts) | `openRun` / `stimulusRecord` / `TrialRecord` / `EVENTS_FILE` | 三个工具 | **B5 / B6 / B30 / B39** + `record` 单测 |
 
 `fold.ts` 与 `host.ts` 是同一条边界的两个出口，别在其中一个里做另一个的事：
 **宿主已经算过的（turn/step 数、token、耗时、上下文、策略）走 `host.ts` 抄回来**，

@@ -146,6 +146,14 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
           description:
             'How many independent trials to run. Each trial is a fresh subagent session.',
         },
+        trial_concurrency: {
+          type: 'number',
+          description:
+            'How many trials may run at once (default 1 = strictly serial). The host refuses ' +
+            'activations beyond its live-child capacity (`maxActiveSubagents`, default 8, shared ' +
+            'with the whole subagent tree) rather than queueing them, so keep this within the free ' +
+            'capacity. Execution scheduling only: it does not change the stimulus fingerprint.',
+        },
         cwd: {
           type: 'string',
           description:
@@ -214,6 +222,16 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
         if (!Number.isSafeInteger(trials) || trials < 1 || trials > deps.limits.maxTrials) {
           throw new Error(`trials must be an integer from 1 to ${String(deps.limits.maxTrials)}`)
         }
+        const trialConcurrency = args.trial_concurrency ?? 1
+        if (
+          !Number.isSafeInteger(trialConcurrency) ||
+          trialConcurrency < 1 ||
+          trialConcurrency > deps.limits.maxTrials
+        ) {
+          throw new Error(
+            `trial_concurrency must be an integer from 1 to ${String(deps.limits.maxTrials)}`,
+          )
+        }
         // Kinds are decided from the extension alone, so the route gate below costs no I/O and comes
         // first: an image that this route cannot deliver must be refused before its bytes are stored.
         const attached = args.attachments ?? []
@@ -243,6 +261,7 @@ export function registerHarnessRun(ctx: Context, deps: HarnessRunDeps): void {
           outputSchema: (args.output_schema as ObjectJsonSchema | undefined) ?? null,
           timeoutMs: args.timeout_ms ?? deps.limits.trialTimeoutMs,
           trials,
+          trialConcurrency,
           recordEvents: args.record_events ?? true,
         }
         const depsForRun = {

@@ -37,6 +37,7 @@ function meta(runId: string, harness: Awaited<ReturnType<typeof captured>>): Run
     runId,
     startedAt: 1,
     stimulus: stimulusRecord(harness, []),
+    trialConcurrency: 1,
     task: {
       taskId: 't1',
       prompt: 'do the thing',

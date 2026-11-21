@@ -154,6 +154,8 @@ export interface RunMeta {
   readonly startedAt: number
   /** The stimulus every trial in this run shares, at the identity level. */
   readonly stimulus: StimulusRecord
+  /** How many trials were allowed in flight at once; `1` is strictly serial. Scheduling, not stimulus. */
+  readonly trialConcurrency: number
   /** The task every trial in this run shares, in full: the schema is here, not per trial. */
   readonly task: TaskRecord & { readonly outputSchema: unknown }
   /** Operator's note; free text, not interpreted. */
@@ -170,7 +172,7 @@ export interface RunHandle {
   readonly harnessPath: string
   /** Absolute path of the JSONL record file. */
   readonly recordPath: string
-  /** Append one trial. Resolves after the line is flushed. */
+  /** Append one trial. Writes serialize across concurrent trials; resolves after the line is flushed. */
   append(record: TrialRecord): Promise<void>
   /**
    * Append one trial's raw committed events, tagged with that trial's index.
@@ -330,18 +332,28 @@ export async function openRun(
     throw error
   }
 
+  // One writer at a time: parallel trials can finish together, and two interleaved appends would
+  // splice two JSON lines into one. A failed write rejects its caller but never poisons the chain.
+  let tail: Promise<void> = Promise.resolve()
+  const enqueue = (write: () => Promise<void>): Promise<void> => {
+    const result = tail.then(write)
+    tail = result.catch(() => {})
+    return result
+  }
+
   return {
     runId: meta.runId,
     directory,
     harnessPath,
     recordPath,
-    async append(record: TrialRecord): Promise<void> {
-      await appendFile(recordPath, `${JSON.stringify(record)}\n`, 'utf8')
+    append(record: TrialRecord): Promise<void> {
+      return enqueue(() => appendFile(recordPath, `${JSON.stringify(record)}\n`, 'utf8'))
     },
-    async appendEvents(trial: number, events: readonly SessionEvent[]): Promise<void> {
-      if (events.length === 0) return
+    appendEvents(trial: number, events: readonly SessionEvent[]): Promise<void> {
+      // The empty case stays outside the queue: no events means no file, not an empty one.
+      if (events.length === 0) return Promise.resolve()
       const lines = events.map((event) => `${JSON.stringify({ trial, ...event })}\n`).join('')
-      await appendFile(join(directory, EVENTS_FILE), lines, 'utf8')
+      return enqueue(() => appendFile(join(directory, EVENTS_FILE), lines, 'utf8'))
     },
     async annotate(surface: CapabilitySurface): Promise<void> {
       const written = { ...meta, surface, recordSchema: RECORD_SCHEMA }

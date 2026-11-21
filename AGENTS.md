@@ -160,14 +160,19 @@ typecheck / 测试 / `check:release` —— 那些归 `check` 与 CI，一次提
   两条附带事实：**`applyConfiguredRoute` 只认「provider + model 都在」的 route**，所以只有 effort 会被
   静默丢掉（`resolveRoute` 因此拒绝它，红线 **B35**）；该错误只进了 `events.jsonl` 的 `turn/end`，
   `diagnostic` 是空的 —— 归 B30 的老账（原始层有，聚合层没有）。
-- **rc.2 的形状变化已修，但真机主路径还没在 rc.2 上重跑**（2026-11-13）：宿主 `0.2.2-rc.2` 把
-  `startActivation` 的 spec 摊平（`request` 那一层没有了），旧实参在真机上抛**裸 `TypeError`**
-  （`Cannot read properties of undefined (reading id)`），整条起子代理的路不可用。已平铺（红线 **B36**），
-  依赖三处抬到 `^0.2.2-rc.2`，本机 `pnpm check` 六步全绿。
-  **已证的只有「判据用的那份声明对了」**：装进来的 `dsh-subagent` 类型声明与在跑宿主**逐字节相同**
-  （SHA256 `6CA5691A…`，16508 字节），产物 `lib/index.js` 的实参已是平铺。
-  **未证的**：在 rc.2 上真机跑一次 `harness_run` —— 承载当前会话的宿主进程仍持着改动前的模块，
-  换掉它要重启，不属于本仓能做的事。**这一条仍然算「没验的」。**
+- **rc.2 的形状变化已修，真机主路径已在 rc.3 上重跑**（2026-11-13 修，2026-11-21 验）：宿主
+  `0.2.2-rc.2` 把 `startActivation` 的 spec 摊平（`request` 那一层没有了），旧实参在真机上抛**裸
+  `TypeError`**（`Cannot read properties of undefined (reading id)`）。已平铺（红线 **B36**），
+  依赖三处抬到 `^0.2.2-rc.2`。2026-11-21 经热重载在 `0.2.2-rc.3` 上真机跑通 `harness_run`
+  四路（见下条），平铺实参不再是「只证了声明」。
+- **trial 可并行**（2026-11-21，**真机验过**，宿主 `0.2.2-rc.3`）：`trial_concurrency`（默认 1 =
+  串行），工作池动态领活，前台/后台同一执行体。四路真机：3 并发在 6ms 内同时起飞、落盘按完成顺序
+  行行完整，后台 run 里 trial 3 在 trial 1 结束后 45ms 起飞（动态领活，不是静态切块）；默认串行不变；
+  `job_kill` 把第二波两个在飞 trial **双双**截断记 `aborted`（`timedOut=false`），已完成的保留、
+  preset 无残留；9 并发撞宿主容量闸 8，第 9 个被拒（`ACTIVATION_LIMIT_REACHED`，消息自带现值），
+  其余 8 个落地后才报错、8 条记录保留、目录不删。红线 **B39**（有界池、`allSettled` 先落地再报错、
+  落盘一条队列），反向控制做过；B28 停止块原样搬进 worker，断言未改、反向控制重做。
+  并发是执行调度，不进指纹，只记 run.json（`trialConcurrency`）。
 - **没验的**：无。
 
 ## 待办
@@ -252,6 +257,7 @@ skill 还在教人去找）、`output` 不截断这件事（改动说明不是�
 | 一次「看起来跑过了」的空实验 | 比一次报错贵得多 | 挂载 + 审计 + 探针在 trial 之前；红线 B5/B6 |
 | 把宿主包的 config 当成一次写好的常量 | 宿主把某个字段改成必填，`catalog.ts` 里那份副本就过期，于是**默认工具集整份挂不上**（2026-11-12 实测：`fs-search` 的 `sampleOverCapGlobResults`，`DEFAULT_TOOLS` 与 `{ persona }` 两个入口同时死） | 升级 `engines.dsh` 时逐个核在跑版 `.d.ts`；红线只钉「名字对得上」，钉不住 schema，所以这条靠人 |
 | `catalog.ts` 的 `todo` 条目**没给 config**，而 `@deepseek-ai/dsh-tool-todo` 的 `allowParallelInProgress` 是**必填**（`lib/types/index.js`：`z.boolean().required()`），**发现于 2026-11-13 本轮，未修** | 带 `todo` 键的 harness **挂不上**：`$.allowParallelInProgress missing required value`。与 rc.2 无关，两个 tag 同形 | 现在只能不用 `todo` 键；要修就在 `catalog.ts` 给它补 `config`（`true` / `false` 是**两套不同纪律**：并发写多行 vs 单行，选哪个会改变受试体行为，得先定） |
+| `trial_concurrency` 超过宿主空闲容量 | 宿主**拒绝不排队**（`ACTIVATION_LIMIT_REACHED`）：该 trial 报错，run 等其余 worker 落地后报错，已记录的保留 | 并发 ≤ `maxActiveSubagents`（默认 8，整棵树共享）减去树里其他活子代理；错误消息自带现值 |
 
 ## 改动影响路由
 
