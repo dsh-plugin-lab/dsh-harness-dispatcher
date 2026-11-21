@@ -1685,9 +1685,9 @@ describe('B28 — a stop stops everything', () => {
    */
   it('cancels the trial in flight and starts no more', () => {
     const body = stripComments(sources().get('src/run.ts') ?? '')
-    // The loop breaks at the boundary, so a stop between trials costs no mount. Matched as one block:
-    // an assertion on the `if` alone stayed green when the `break` was deleted, which is the whole
-    // behaviour being asserted.
+    // Each worker breaks at the boundary, so a stop between trials costs no mount. Matched as one
+    // block: an assertion on the `if` alone stayed green when the `break` was deleted, which is the
+    // whole behaviour being asserted.
     expect(body).toMatch(/if \(stop\.aborted\) \{\s*\n\s*stopped = true\s*\n\s*break/)
     // …and does not `throwIfAborted()`, which would abandon the run without saying how much landed.
     expect(body).not.toContain('throwIfAborted')
@@ -2286,5 +2286,38 @@ describe('B38 — a disabled row is reported without a cause the code cannot kno
     expect(denied.problem).not.toMatch(/policy|denied|refus/i)
     // The discriminator B33 owns still holds: declaring nothing is not the same rejection.
     expect(emptySurfaceVerdict({ rows: [], tools: [], skills: [] }).problem).toBeNull()
+  })
+})
+
+describe('B39 — parallel trials are a bounded pool that drains before it reports', () => {
+  /**
+   * `trial_concurrency` lets N trials share one run. Three properties carry the weight:
+   *
+   * - the worker count is min(concurrency, trials), so a big knob on a small run starts nothing extra;
+   * - a rejected worker does not abandon its siblings: the preset unmount lives in `finally`, and
+   *   `Promise.all` would reach it while other subjects were still running;
+   * - record writes serialize, because two trials finishing together would otherwise splice two JSON
+   *   lines into one — a corrupt file that still looks like a record.
+   *
+   * Reverse control: swap `allSettled` for `all`, or bypass `enqueue` in either appender, and this reds.
+   */
+  it('bounds the workers and drains them before throwing the first rejection', () => {
+    const body = stripComments(sources().get('src/run.ts') ?? '')
+    expect(body).toMatch(/Math\.min\(request\.trialConcurrency, request\.trials\)/)
+    expect(body).toContain('Promise.allSettled(')
+    expect(body).not.toContain('Promise.all(')
+    expect(body).toMatch(
+      /for \(const result of settled\) \{\s*\n\s*if \(result\.status === 'rejected'\) throw result\.reason/,
+    )
+  })
+
+  it('serializes both appenders through the one queue', () => {
+    const record = stripComments(sources().get('src/record.ts') ?? '')
+    expect(record).toMatch(/tail\.then\(write\)/)
+    expect(record).toMatch(/tail = result\.catch/)
+    expect(record).toMatch(
+      /append\(record: TrialRecord\): Promise<void> \{\s*\n\s*return enqueue\(/,
+    )
+    expect(record).toMatch(/return enqueue\(\(\) => appendFile\(join\(directory, EVENTS_FILE\)/)
   })
 })

@@ -67,6 +67,8 @@ export interface RunRequest {
   /** `0` disables the per-trial budget. */
   readonly timeoutMs: number
   readonly trials: number
+  /** How many trials may be in flight at once; `1` is strictly serial. */
+  readonly trialConcurrency: number
   /**
    * Keep each subject's committed events verbatim in `events.jsonl`.
    *
@@ -88,7 +90,7 @@ export interface RunSummary {
   /**
    * Whether the caller asked to stop before every requested trial had run.
    *
-   * Reported rather than inferred: `outcomes.length < trials` means either "stopped" or "the loop
+   * Reported rather than inferred: `outcomes.length < trials` means either "stopped" or "a worker
    * threw", and a reader who has to guess which will guess wrong. A stopped run is not a failure — the
    * trials that ran are data, and the ones that did not were never started.
    *
@@ -166,6 +168,7 @@ export async function runBench(
       runId,
       startedAt: Date.now(),
       stimulus,
+      trialConcurrency: request.trialConcurrency,
       task: {
         taskId: request.taskId,
         prompt: request.prompt.text,
@@ -213,17 +216,33 @@ export async function runBench(
       recordEvents: request.recordEvents,
     }
 
-    // A stop abandons the experiment: the trial in flight is cancelled (through its own signal, inside
-    // `runTrial`) and recorded as `aborted`, then nothing new starts. The check comes first so a stop
-    // that landed between two trials costs no mount and leaves no half-started child.
-    for (let index = 1; index <= request.trials; index += 1) {
-      if (stop.aborted) {
-        stopped = true
-        break
+    // A stop abandons the experiment: every trial in flight is cancelled (through its own signal,
+    // inside `runTrial`) and recorded as `aborted`, then nothing new starts. Each worker checks before
+    // claiming an index, so a stop that landed between two trials costs no mount.
+    let next = 1
+    const worker = async (): Promise<void> => {
+      while (next <= request.trials) {
+        if (stop.aborted) {
+          stopped = true
+          break
+        }
+        // Claim and increment with no await between: single-threaded JS makes this atomic.
+        const index = next
+        next += 1
+        const outcome = await runTrial(deps, plan, parent, stop, run, index)
+        outcomes.push(outcome)
+        observer?.onTrial?.(outcome, outcomes.length)
       }
-      const outcome = await runTrial(deps, plan, parent, stop, run, index)
-      outcomes.push(outcome)
-      observer?.onTrial?.(outcome, outcomes.length)
+    }
+    // allSettled, not all: one rejected trial must not abandon its siblings — the preset is unmounted
+    // in `finally`, and that may only happen once every worker has landed.
+    const settled = await Promise.allSettled(
+      Array.from({ length: Math.min(request.trialConcurrency, request.trials) }, () => worker()),
+    )
+    // Disk lines land in completion order (each carries its `trial`); the return value stays ordered.
+    outcomes.sort((a, b) => a.trial - b.trial)
+    for (const result of settled) {
+      if (result.status === 'rejected') throw result.reason
     }
 
     return {
