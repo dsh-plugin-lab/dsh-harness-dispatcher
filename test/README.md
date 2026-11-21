@@ -71,6 +71,8 @@ pnpm exec vitest run -t 'B8'                     # 按红线编号
 | B35 | 生成控制属于刺激：`reasoning_effort` / `max_tokens` 进指纹、进记录、进 `agentOptions`，`null` 表示继承 |
 | B36 | `startActivation` 的实参是**平铺**的（宿主 0.2.2-rc.2 起 `request` 那一层没有了），也不许从 `request` 上读字段 |
 | B37 | 门面标语是**两行**：`<strong>` 是本文件的语言、`<em>` 是另一种；两份 README 互为镜像（换过来，不是各译一遍） |
+| B38 | 被禁用的行只报「不出力」这个观测，不编造成因（启用与否合并了至少四个来源，本仓不解析 harness 文件，问不出是哪个） |
+| B39 | 并行 trial 是有界池：worker 数 = min(并发, trials)；一个被拒先等其余落地再报错（`allSettled`）；两个落盘口都走同一条写入队列 |
 
 ## 已知盲区（**不是遗漏，是边界**）
 

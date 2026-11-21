@@ -534,7 +534,7 @@ harness 文件所在目录，而 run 目录不在任何解析基准上，挂副�
 
 | 面 | 形态 | 阶段 |
 |---|---|---|
-| `harness_run` | 工具：任务 + 受试 harness + trial 数 → 结构化句柄 | **已实现** |
+| `harness_run` | 工具：任务 + 受试 harness + trial 数/并发 → 结构化句柄 | **已实现** |
 | `harness_inspect` | 挂载 + 审计 + 探针（`acquireScope`），**零模型成本**；四个入口按成本排序：无参（列 preset + provider）、`{provider}`（列该路由的模型）、`preset`、`harness`；判定分两级：`problems`（跑不成/不是要做的实验）与 `warnings`（挂载了但不出力） | **已实现** |
 | `harness_export` | `readDocument()` → 一份能跑的 harness 文件 | **已实现** |
 | 使用说明 skill | [src/skill.ts](../src/skill.ts)，代码注册、`skills` 服务可选 | **已实现**（注册对象要带 `source`，否则只列得出、加载不了；还要带 `path` / `resourceBase`，否则右栏点不开、相对路径无处可解 —— 红线 **B24**） |
@@ -548,9 +548,9 @@ harness 文件所在目录，而 run 目录不在任何解析基准上，挂副�
 
 ### 5.1 后台通道：同一个工具的一个开关
 
-一个 trial 是一次完整子 agent 跑动，可能几分钟；N 个 trial 串起来时，前台调用会让**调用方那一轮**
-一直等着。宿主的解法不是另一个工具，而是 `pwsh` 与 `workflow` 都在用的那个形状：**同一个工具加
-`run_in_background`**。
+一个 trial 是一次完整子 agent 跑动，可能几分钟；前台调用会让**调用方那一轮**一直等着（trial 默认
+串行，`trial_concurrency` 可并行，见 §5.2）。宿主的解法不是另一个工具，而是 `pwsh` 与 `workflow`
+都在用的那个形状：**同一个工具加 `run_in_background`**。
 
 - 默认前台：跑完再返回，短试验最省事。
 - `run_in_background: true`：`ctx.jobs.start()` 注册成 job 后**立刻返回 job id**，`job_output` 读逐 trial
@@ -570,10 +570,17 @@ harness 文件所在目录，而 run 目录不在任何解析基准上，挂副�
 
 ### 5.2 并发
 
-`isConcurrencySafe: () => false`。gate 与 collector 都按 session 键控，并发**逻辑上**是对的，
-但一次 run 会挂载一份 preset、写一个文件；让一次调用独占 bench 更容易推理。
+两层，互不影响：
 
-实测两次重叠调用确实被串行化：后一次的第一个 trial 在前一次的最后一个 trial 结束之后才开始。
+- **调用之间**：`isConcurrencySafe: () => false`，一次调用独占 bench。实测两次重叠调用被串行化：
+  后一次的第一个 trial 在前一次的最后一个 trial 结束之后才开始。
+- **调用内部**：`trial_concurrency`（默认 1 = 串行）控制同时在飞的 trial 数，工作池动态领活。
+  gate 与 collector 按 session 键控，天然支持重叠；落盘走一条写入队列，JSONL 不会交错。
+  一个 worker 被拒（如超出宿主 `maxActiveSubagents`，整棵树共享，**拒绝不排队**）会等其他
+  worker 落地后再报错，已记录的保留。并发是执行调度，不进 stimulus 指纹，只记在 run.json。
+  抬闸归操作者，不是受试变量：在宿主 profile patch 或 GUI 设置里找对应服务
+  （`dsh-subagent` / `dsh-jobs-local`）的容量项；**认服务名不认数字**——现值看错误消息，
+  patch 语义核在跑版。
 
 ### 5.3 停止一个正在跑的受试体
 
